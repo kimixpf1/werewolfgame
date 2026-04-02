@@ -1,0 +1,7 @@
+app/node_modules/
+app/dist/
+__inspect_archive/
+__single_extract/
+__binary_test/
+*.zip
+*.tar.gz
