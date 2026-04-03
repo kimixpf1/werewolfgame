@@ -9,7 +9,7 @@
 - `app/src/lib/supabase.ts`：当前已切回 Supabase 客户端，负责房间 RPC、玩家会话恢复、房主/玩家 token 校验与轮询快照读取。
 - `app/public/`：角色头像、卡牌等静态资源。
 - `supabase/schema.sql`：版本 1 正式联机方案的建表、触发器、RLS、RPC 与 Realtime 初始化脚本。
-- `.github/workflows/`：GitHub Pages 自动部署流程。
+- `.github/workflows/`：GitHub Pages 自动部署流程，当前改为构建后发布到 `gh-pages` 分支。
 - `.trae/rules/`：长期规则、项目框架、待办、迭代记录。
 
 ## 现阶段判断
@@ -17,4 +17,4 @@
 - 产品是一个偏移动端的狼人杀发牌与法官辅助网页。
 - 当前版本已重新对接新的 Supabase 项目，并改为通过 RPC + token 会话模型实现轻量安全版联机。
 - 页面主色调为深色渐变，交互以全屏单页切换为主，底部固定操作区较多。
-- GitHub Pages 负责静态站点托管，前端通过 Supabase RPC 和轮询快照同步房间与玩家状态。
+- GitHub Pages 负责静态站点托管，当前通过 Actions 构建并推送 `gh-pages` 分支；前端通过 Supabase RPC 和轮询快照同步房间与玩家状态。
