@@ -235,3 +235,44 @@ export interface GameResult {
   reason: string;
   endedAt: string;
 }
+
+export type FeedbackStatus = 'new' | 'processing' | 'done' | 'ignored';
+
+export interface FeedbackMessage {
+  id: number;
+  device_id: string;
+  room_id?: string | null;
+  player_name?: string | null;
+  contact?: string | null;
+  content: string;
+  status: FeedbackStatus;
+  admin_note?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminProfile {
+  user_id: string;
+  email: string;
+  role: 'admin' | 'viewer';
+}
+
+export interface AdminTrendPoint {
+  date: string;
+  rooms_created: number;
+  games_started: number;
+  feedback_count: number;
+  active_devices: number;
+}
+
+export interface AdminDashboardSummary {
+  total_devices: number;
+  active_devices_7d: number;
+  total_rooms: number;
+  games_started: number;
+  games_ended: number;
+  total_feedback: number;
+  pending_feedback: number;
+  total_join_events: number;
+  trend: AdminTrendPoint[];
+}

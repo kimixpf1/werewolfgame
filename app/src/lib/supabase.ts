@@ -1,16 +1,28 @@
 import { createClient } from '@supabase/supabase-js';
-import type { LocalPlayerInfo, Player, Room, RoomStatus } from '@/types';
+import type {
+  AdminDashboardSummary,
+  AdminProfile,
+  FeedbackMessage,
+  FeedbackStatus,
+  LocalPlayerInfo,
+  Player,
+  Room,
+  RoomStatus,
+} from '@/types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ejeiuqcmkznfbglvbkbe.supabase.co';
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqZWl1cWNta3puZmJnbHZia2JlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1ODU4NzIsImV4cCI6MjA4NzE2MTg3Mn0.NfmTSA9DhuP51XKF0qfTuPINtSc7i26u5yIbl69cdAg';
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
-    autoRefreshToken: false,
-    persistSession: false,
+    autoRefreshToken: true,
+    persistSession: true,
     detectSessionInUrl: false,
+    storageKey: 'werewolf_admin_auth',
   },
 });
+
+const DEVICE_STORAGE_KEY = 'werewolf_device_id';
 
 type RoomConfig = {
   enable_sheriff: boolean;
@@ -38,6 +50,30 @@ type JoinRoomPayload = {
   player_token: string;
   reclaimed?: boolean;
   restored?: boolean;
+};
+
+type AdminMePayload = {
+  user_id: string;
+  email: string;
+  role: 'admin' | 'viewer';
+};
+
+type AdminDashboardPayload = {
+  total_devices: number;
+  active_devices_7d: number;
+  total_rooms: number;
+  games_started: number;
+  games_ended: number;
+  total_feedback: number;
+  pending_feedback: number;
+  total_join_events: number;
+  trend: Array<{
+    date: string;
+    rooms_created: number;
+    games_started: number;
+    feedback_count: number;
+    active_devices: number;
+  }>;
 };
 
 function cloneError(error: unknown) {
@@ -93,6 +129,51 @@ function normalizeSnapshot(payload: SnapshotPayload | null) {
   return { room, players };
 }
 
+function normalizeFeedback(raw: any): FeedbackMessage {
+  return {
+    id: Number(raw.id),
+    device_id: raw.device_id,
+    room_id: raw.room_id ?? null,
+    player_name: raw.player_name ?? null,
+    contact: raw.contact ?? null,
+    content: raw.content ?? '',
+    status: raw.status ?? 'new',
+    admin_note: raw.admin_note ?? null,
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
+  };
+}
+
+function normalizeAdminProfile(raw: any): AdminProfile {
+  return {
+    user_id: raw.user_id,
+    email: raw.email ?? '',
+    role: raw.role === 'viewer' ? 'viewer' : 'admin',
+  };
+}
+
+function normalizeDashboard(raw: any): AdminDashboardSummary {
+  return {
+    total_devices: Number(raw.total_devices ?? 0),
+    active_devices_7d: Number(raw.active_devices_7d ?? 0),
+    total_rooms: Number(raw.total_rooms ?? 0),
+    games_started: Number(raw.games_started ?? 0),
+    games_ended: Number(raw.games_ended ?? 0),
+    total_feedback: Number(raw.total_feedback ?? 0),
+    pending_feedback: Number(raw.pending_feedback ?? 0),
+    total_join_events: Number(raw.total_join_events ?? 0),
+    trend: Array.isArray(raw.trend)
+      ? raw.trend.map((item: any) => ({
+          date: item.date,
+          rooms_created: Number(item.rooms_created ?? 0),
+          games_started: Number(item.games_started ?? 0),
+          feedback_count: Number(item.feedback_count ?? 0),
+          active_devices: Number(item.active_devices ?? 0),
+        }))
+      : [],
+  };
+}
+
 function saveRoomConfigLocally(room: Partial<Room> & Record<string, any>) {
   if (typeof localStorage === 'undefined' || !room.id) {
     return;
@@ -134,6 +215,25 @@ export function generateRoomId(): string {
 
 export function generatePlayerId(): string {
   return `player_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
+export function getOrCreateDeviceId(): string {
+  if (typeof localStorage === 'undefined') {
+    return `device_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  const existing = localStorage.getItem(DEVICE_STORAGE_KEY);
+  if (existing) {
+    return existing;
+  }
+
+  const value =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `device_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+  localStorage.setItem(DEVICE_STORAGE_KEY, value);
+  return value;
 }
 
 export function getRoomConfig(roomId: string): { enable_sheriff: boolean; win_mode: 'city' | 'side'; enable_auto_judge: boolean } {
@@ -450,4 +550,137 @@ export async function removePlayer(
   });
 
   return { data: !error, error };
+}
+
+export async function trackUsageEvent({
+  eventType,
+  roomId = null,
+  playerId = null,
+  playerName = null,
+  payload = {},
+  deviceId = getOrCreateDeviceId(),
+}: {
+  eventType: string;
+  roomId?: string | null;
+  playerId?: string | null;
+  playerName?: string | null;
+  payload?: Record<string, unknown>;
+  deviceId?: string;
+}): Promise<{ data: boolean; error: any }> {
+  const { error } = await invokeRpc<boolean>('app_track_event', {
+    p_device_id: deviceId,
+    p_event_type: eventType,
+    p_room_id: roomId,
+    p_player_id: playerId,
+    p_player_name: playerName,
+    p_payload: payload,
+  });
+
+  return { data: !error, error };
+}
+
+export async function submitFeedback({
+  content,
+  playerName = null,
+  roomId = null,
+  contact = null,
+}: {
+  content: string;
+  playerName?: string | null;
+  roomId?: string | null;
+  contact?: string | null;
+}): Promise<{ data: FeedbackMessage | null; error: any }> {
+  const { data, error } = await invokeRpc<any>('app_submit_feedback', {
+    p_device_id: getOrCreateDeviceId(),
+    p_player_name: playerName,
+    p_room_id: roomId,
+    p_contact: contact,
+    p_content: content.trim(),
+  });
+
+  return {
+    data: data ? normalizeFeedback(data) : null,
+    error,
+  };
+}
+
+export async function signInAdmin(
+  email: string,
+  password: string
+): Promise<{ data: AdminProfile | null; error: any }> {
+  try {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    if (error) {
+      return { data: null, error: cloneError(error.message || error) };
+    }
+
+    const profile = await getAdminProfile();
+    if (profile.error || !profile.data) {
+      await supabase.auth.signOut();
+      return { data: null, error: profile.error || new Error('没有管理员权限') };
+    }
+
+    return profile;
+  } catch (error) {
+    return { data: null, error: cloneError(error) };
+  }
+}
+
+export async function signOutAdmin(): Promise<{ data: boolean; error: any }> {
+  try {
+    const { error } = await supabase.auth.signOut();
+    return { data: !error, error: error ? cloneError(error.message || error) : null };
+  } catch (error) {
+    return { data: false, error: cloneError(error) };
+  }
+}
+
+export async function getAdminProfile(): Promise<{ data: AdminProfile | null; error: any }> {
+  const { data, error } = await invokeRpc<AdminMePayload>('admin_get_me', {});
+  return {
+    data: data ? normalizeAdminProfile(data) : null,
+    error,
+  };
+}
+
+export async function getAdminDashboardSummary(): Promise<{ data: AdminDashboardSummary | null; error: any }> {
+  const { data, error } = await invokeRpc<AdminDashboardPayload>('admin_get_dashboard_summary', {});
+  return {
+    data: data ? normalizeDashboard(data) : null,
+    error,
+  };
+}
+
+export async function listFeedbackMessages(
+  status: FeedbackStatus | 'all' = 'all'
+): Promise<{ data: FeedbackMessage[] | null; error: any }> {
+  const { data, error } = await invokeRpc<any[]>('admin_list_feedback', {
+    p_status: status === 'all' ? null : status,
+  });
+
+  return {
+    data: Array.isArray(data) ? data.map(normalizeFeedback) : null,
+    error,
+  };
+}
+
+export async function updateFeedbackMessage(
+  feedbackId: number,
+  status: FeedbackStatus,
+  adminNote: string
+): Promise<{ data: FeedbackMessage | null; error: any }> {
+  const { data, error } = await invokeRpc<any>('admin_update_feedback', {
+    p_feedback_id: feedbackId,
+    p_status: status,
+    p_admin_note: adminNote.trim() || null,
+  });
+
+  return {
+    data: data ? normalizeFeedback(data) : null,
+    error,
+  };
 }
