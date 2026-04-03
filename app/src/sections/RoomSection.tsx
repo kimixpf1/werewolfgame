@@ -25,16 +25,14 @@ import {
 } from 'lucide-react';
 import { 
   addPlayer,
-  getPlayers, 
+  getRoomSnapshot,
+  touchPlayerSession,
   updateRoomStatus, 
   updatePlayerRole, 
   batchUpdatePlayerRoles, 
   updatePlayerAlive, 
   updatePlayerName,
   removePlayer,
-  subscribeToRoom, 
-  subscribeToPlayers, 
-  leaveChannel,
   getRoomConfig,
   updateRoom
 } from '@/lib/supabase';
@@ -43,11 +41,11 @@ import { RoleCard, RoleDetailModal } from '@/components/RoleCard';
 import { ModeratorPanel } from '@/components/ModeratorPanel';
 import { SheriffBadge } from '@/components/SheriffBadge';
 import { AutoJudge } from '@/components/AutoJudge';
-import type { Room, Player, RoleType, NightAction, DayVote, PlayerNote } from '@/types';
+import type { Room, Player, RoleType, NightAction, DayVote, PlayerNote, LocalPlayerInfo } from '@/types';
 
 interface RoomSectionProps {
   room: Room;
-  localPlayer: { playerId: string; roomId: string; isHost: boolean };
+  localPlayer: LocalPlayerInfo;
   onLeave: () => void;
 }
 
@@ -101,47 +99,51 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
   const isRoomHost = (localPlayer as any).isHost || localPlayer.playerId === room.host_id;
 
   // 加载玩家列表
-  const loadPlayers = useCallback(async () => {
-    const { data } = await getPlayers(room.id);
+  const loadRoomSnapshot = useCallback(async () => {
+    const { data } = await getRoomSnapshot(room.id, localPlayer);
     if (data) {
-      setPlayers(data);
+      setRoom(data.room);
+      setPlayers(data.players);
+      setSheriffId(data.room.sheriff_id || null);
+      setSheriffTorn(data.room.sheriff_torn || false);
+      if (data.room.status === 'ended' && data.room.game_result) {
+        setGameResult({
+          winner: data.room.game_result.winner,
+          reason: data.room.game_result.reason,
+        });
+      }
     }
-  }, [room.id]);
+  }, [localPlayer, room.id]);
 
   // 订阅房间和玩家变化
   useEffect(() => {
-    loadPlayers();
+    loadRoomSnapshot();
     
-    // 从localStorage读取游戏结果
     const savedResult = localStorage.getItem(`game_result_${room.id}`);
     if (savedResult) {
       setGameResult(JSON.parse(savedResult));
     }
 
-    const roomChannel = subscribeToRoom(room.id, (payload) => {
-      if (payload.new) {
-        setRoom(payload.new as Room);
-        setSheriffId(payload.new.sheriff_id);
-        setSheriffTorn(payload.new.sheriff_torn);
-        // 当房间状态变为ended时，从localStorage读取游戏结果
-        if (payload.new.status === 'ended') {
-          const result = localStorage.getItem(`game_result_${room.id}`);
-          if (result) {
-            setGameResult(JSON.parse(result));
-          }
-        }
-      }
-    });
-
-    const playersChannel = subscribeToPlayers(room.id, () => {
-      loadPlayers();
-    });
+    const timerId = window.setInterval(() => {
+      loadRoomSnapshot();
+    }, 1200);
 
     return () => {
-      leaveChannel(roomChannel);
-      leaveChannel(playersChannel);
+      window.clearInterval(timerId);
     };
-  }, [room.id, loadPlayers]);
+  }, [loadRoomSnapshot, room.id]);
+
+  useEffect(() => {
+    touchPlayerSession(localPlayer);
+
+    const heartbeatId = window.setInterval(() => {
+      touchPlayerSession(localPlayer);
+    }, 20000);
+
+    return () => {
+      window.clearInterval(heartbeatId);
+    };
+  }, [localPlayer]);
 
   // 复制房间号
   const copyRoomInfo = () => {
@@ -153,15 +155,14 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
   // 添加玩家
   const handleAddPlayer = async () => {
     if (!newPlayerName.trim() || !isRoomHost) return;
+    if (!localPlayer.hostToken) return;
     
     setLoading(true);
-    const playerId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    await addPlayer(playerId, room.id, newPlayerName.trim(), false);
+    await addPlayer(room.id, localPlayer.hostToken, newPlayerName.trim());
     
     setNewPlayerName('');
     setLoading(false);
-    loadPlayers();
+    loadRoomSnapshot();
   };
 
   // 发牌
@@ -169,6 +170,7 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     // 过滤掉法官，只给普通玩家发牌
     const gamePlayers = players.filter(p => !p.is_host);
     if (!isRoomHost || gamePlayers.length !== room.player_count) return;
+    if (!localPlayer.hostToken) return;
     
     setLoading(true);
     const shuffledRoles = dealCards(room.roles);
@@ -178,8 +180,8 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
       role: shuffledRoles[index],
     }));
     
-    await batchUpdatePlayerRoles(room.id, updates);
-    await updateRoomStatus(room.id, 'playing');
+    await batchUpdatePlayerRoles(room.id, localPlayer.hostToken, updates);
+    await updateRoomStatus(room.id, localPlayer.hostToken, 'playing');
     
     // 保存游戏记录
     const record = {
@@ -199,18 +201,19 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
   // 重新开始
   const handleRestart = async () => {
     if (!isRoomHost) return;
+    if (!localPlayer.hostToken) return;
     
     setLoading(true);
     
     // 只重置普通玩家（不含法官）
     const gamePlayers = players.filter(p => !p.is_host);
     for (const player of gamePlayers) {
-      await updatePlayerRole(room.id, player.id, '');
-      await updatePlayerAlive(room.id, player.id, true);
+      await updatePlayerRole(room.id, localPlayer.hostToken, player.id, '');
+      await updatePlayerAlive(room.id, localPlayer.hostToken, player.id, true);
     }
     
-    await updateRoomStatus(room.id, 'waiting');
-    await updateRoom(room.id, { 
+    await updateRoomStatus(room.id, localPlayer.hostToken, 'waiting');
+    await updateRoom(room.id, localPlayer.hostToken, { 
       sheriff_id: null, 
       sheriff_torn: false,
       current_round: 1 
@@ -228,7 +231,8 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
   // 切换玩家存活状态
   const togglePlayerAlive = async (playerId: string, currentStatus: boolean) => {
     if (!isRoomHost) return;
-    await updatePlayerAlive(room.id, playerId, !currentStatus);
+    if (!localPlayer.hostToken) return;
+    await updatePlayerAlive(room.id, localPlayer.hostToken, playerId, !currentStatus);
     
     // 如果警长出局，提示传递警徽
     const player = players.find(p => p.id === playerId);
@@ -240,14 +244,16 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
   // 传递警徽
   const handleTransferSheriff = async (newSheriffId: string | null) => {
     if (!isRoomHost) return;
-    await updateRoom(room.id, { sheriff_id: newSheriffId });
+    if (!localPlayer.hostToken) return;
+    await updateRoom(room.id, localPlayer.hostToken, { sheriff_id: newSheriffId });
     setSheriffId(newSheriffId);
   };
 
   // 撕毁警徽
   const handleTearSheriff = async () => {
     if (!isRoomHost) return;
-    await updateRoom(room.id, { sheriff_torn: true, sheriff_id: null });
+    if (!localPlayer.hostToken) return;
+    await updateRoom(room.id, localPlayer.hostToken, { sheriff_torn: true, sheriff_id: null });
     setSheriffTorn(true);
     setSheriffId(null);
   };
@@ -269,10 +275,10 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     const canEdit = isRoomHost || editingPlayerId === localPlayer.playerId;
     if (!canEdit) return;
     
-    await updatePlayerName(room.id, editingPlayerId, editingName.trim());
+    await updatePlayerName(room.id, localPlayer, editingPlayerId, editingName.trim());
     setEditingPlayerId(null);
     setEditingName('');
-    loadPlayers();
+    loadRoomSnapshot();
   };
 
   // 取消编辑名字
@@ -284,14 +290,15 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
   // 法官踢出玩家
   const handleKickPlayer = async (playerId: string) => {
     if (!isRoomHost) return;
+    if (!localPlayer.hostToken) return;
     
     const player = players.find(p => p.id === playerId);
     if (!player || player.is_host) return; // 不能踢出法官
     
     if (!confirm(`确定要将 ${player.name} 踢出房间吗？`)) return;
     
-    await removePlayer(room.id, playerId);
-    loadPlayers();
+    await removePlayer(room.id, localPlayer.hostToken, playerId);
+    loadRoomSnapshot();
   };
 
   // 处理退出房间
@@ -323,17 +330,25 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
   
   // 处理玩家死亡（从法官记录触发）
   const handlePlayerDie = async (playerId: string) => {
-    await updatePlayerAlive(room.id, playerId, false);
-    loadPlayers();
+    if (!localPlayer.hostToken) return;
+    await updatePlayerAlive(room.id, localPlayer.hostToken, playerId, false);
+    loadRoomSnapshot();
   };
   
   // 处理游戏结束
   const handleGameEnd = async (winner: 'good' | 'evil', reason: string) => {
+    if (!localPlayer.hostToken) return;
     const result = { winner, reason };
     setGameResult(result);
-    // 保存到localStorage以便其他玩家同步
     localStorage.setItem(`game_result_${room.id}`, JSON.stringify(result));
-    await updateRoomStatus(room.id, 'ended');
+    await updateRoom(room.id, localPlayer.hostToken, {
+      status: 'ended',
+      game_result: {
+        winner,
+        reason,
+        ended_at: new Date().toISOString(),
+      },
+    });
   };
   
   // 添加玩家个人记录
@@ -769,6 +784,9 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
                             {player.id === localPlayer.playerId && (
                               <span className="text-xs text-purple-400 flex-shrink-0">(你)</span>
                             )}
+                            {isRoomHost && player.is_connected === false && (
+                              <span className="text-xs text-amber-400 flex-shrink-0">(离线)</span>
+                            )}
                           </>
                         )}
                       </div>
@@ -1116,6 +1134,7 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
             players={players}
             roles={room.roles.map(r => r.type as RoleType)}
             isHost={isRoomHost}
+            hostToken={localPlayer.hostToken}
             currentPlayerId={localPlayer.playerId}
             currentPlayerRole={myRole || undefined}
             onExit={() => setShowAutoJudge(false)}

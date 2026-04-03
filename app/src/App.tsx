@@ -8,10 +8,11 @@ import { RolesSection } from '@/sections/RolesSection';
 import { GuideSection } from '@/sections/GuideSection';
 import { 
   createRoom, 
-  addPlayer, 
+  joinRoom,
   generateRoomId, 
   generatePlayerId, 
-  getRoom
+  markPlayerDisconnected,
+  restorePlayerSession
 } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
@@ -32,14 +33,12 @@ function App() {
     if (saved) {
       try {
         const playerInfo: LocalPlayerInfo = JSON.parse(saved);
-        // 验证房间是否仍然存在
-        getRoom(playerInfo.roomId).then(({ data }) => {
-          if (data) {
+        restorePlayerSession(playerInfo).then(({ data }) => {
+          if (data?.room) {
             setLocalPlayer(playerInfo);
-            setCurrentRoom(data);
+            setCurrentRoom(data.room);
             setCurrentView('room');
           } else {
-            // 房间不存在，清除本地存储
             localStorage.removeItem('werewolf_player');
           }
         });
@@ -63,7 +62,7 @@ function App() {
       console.log('Creating room with:', { hostName, playerCount, roles, enableSheriff, winMode, enableAutoJudge });
       const hostId = generatePlayerId();
       let roomId = '';
-      let room: Room | null = null;
+      let roomData: { room: Room; playerToken: string; hostToken: string } | null = null;
       let roomError: any = null;
 
       for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -72,6 +71,7 @@ function App() {
         const result = await createRoom(
           roomId,
           hostId,
+          hostName,
           playerCount,
           roles,
           enableSheriff,
@@ -79,10 +79,10 @@ function App() {
           enableAutoJudge
         );
 
-        room = result.data;
+        roomData = result.data;
         roomError = result.error;
 
-        if (room) {
+        if (roomData) {
           break;
         }
 
@@ -91,37 +91,24 @@ function App() {
         }
       }
 
-      if (roomError || !room) {
+      if (roomError || !roomData) {
         toast.error('创建房间失败：' + (roomError?.message || '未知错误'));
         console.error('Create room error:', roomError);
         return;
       }
-      console.log('Room created:', room);
+      console.log('Room created:', roomData.room);
 
-      // 添加法官玩家（如果是电子法官模式，法官作为普通玩家加入）
-      const { data: playerData, error: playerError } = await addPlayer(
-        hostId, 
-        roomId, 
-        hostName, 
-        !enableAutoJudge // 电子法官模式下，法官不作为host
-      );
-
-      if (playerError) {
-        toast.error('创建玩家失败：' + (playerError?.message || '未知错误'));
-        console.error('Add player error:', playerError);
-        return;
-      }
-      console.log('Player added:', playerData);
-
-      // 保存本地玩家信息
       const playerInfo: LocalPlayerInfo = {
         playerId: hostId,
         roomId,
-        isHost: !enableAutoJudge, // 电子法官模式下，法官不是host
+        isHost: !enableAutoJudge,
+        playerToken: roomData.playerToken,
+        hostToken: roomData.hostToken,
+        playerName: hostName.trim(),
       };
       localStorage.setItem('werewolf_player', JSON.stringify(playerInfo));
 
-      setCurrentRoom(room);
+      setCurrentRoom(roomData.room);
       setLocalPlayer(playerInfo);
       setCurrentView('room');
       toast.success(enableAutoJudge ? '电子法官房间创建成功！你将以普通玩家身份加入' : '房间创建成功！');
@@ -137,48 +124,49 @@ function App() {
     setJoinError('');
 
     try {
-      // 检查房间是否存在
-      const { data: room, error: roomError } = await getRoom(roomId);
-      
-      if (roomError || !room) {
-        setJoinError(roomError?.message?.includes('联机服务不可用') ? roomError.message : '房间不存在，请检查房间号');
+      const saved = localStorage.getItem('werewolf_player');
+      let existingSession: LocalPlayerInfo | null = null;
+
+      if (saved) {
+        try {
+          const parsed: LocalPlayerInfo = JSON.parse(saved);
+          if (parsed.roomId === roomId) {
+            existingSession = parsed;
+          }
+        } catch (error) {
+          console.warn('Failed to parse local session:', error);
+        }
+      }
+
+      const { data, error } = await joinRoom(roomId, playerName, existingSession);
+
+      if (error || !data) {
+        setJoinError(error?.message || '加入失败，请重试');
         setJoinLoading(false);
         return;
       }
 
-      if (room.status !== 'waiting') {
-        setJoinError('游戏已经开始，无法加入');
-        setJoinLoading(false);
-        return;
-      }
-
-      // 创建玩家
-      const playerId = generatePlayerId();
-      const { error: playerError } = await addPlayer(
-        playerId,
-        roomId,
-        playerName,
-        false
-      );
-
-      if (playerError) {
-        setJoinError('加入失败，请重试');
-        setJoinLoading(false);
-        return;
-      }
-
-      // 保存本地玩家信息
       const playerInfo: LocalPlayerInfo = {
-        playerId,
+        playerId: data.player.id,
         roomId,
         isHost: false,
+        playerToken: data.playerToken,
+        playerName: data.player.name,
+        hostToken: null,
       };
       localStorage.setItem('werewolf_player', JSON.stringify(playerInfo));
 
-      setCurrentRoom(room);
+      setCurrentRoom(data.room);
       setLocalPlayer(playerInfo);
       setCurrentView('room');
-      toast.success('成功加入房间！');
+
+      if (data.restored) {
+        toast.success('已恢复你原来的房间身份');
+      } else if (data.reclaimed) {
+        toast.success('已找回你原来的座位');
+      } else {
+        toast.success('成功加入房间！');
+      }
     } catch (error) {
       console.error('Join room error:', error);
       setJoinError('网络错误，请重试');
@@ -188,7 +176,10 @@ function App() {
   };
 
   // 离开房间
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
+    if (localPlayer) {
+      await markPlayerDisconnected(localPlayer);
+    }
     setCurrentRoom(null);
     setLocalPlayer(null);
     localStorage.removeItem('werewolf_player');

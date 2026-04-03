@@ -41,6 +41,7 @@ interface AutoJudgeProps {
   players: Player[];
   roles: RoleType[];
   isHost: boolean;
+  hostToken?: string | null;
   currentPlayerId?: string;
   currentPlayerRole?: RoleType;
   onExit: () => void;
@@ -138,6 +139,7 @@ export function AutoJudge({
   players, 
   roles, 
   isHost, 
+  hostToken,
   currentPlayerId,
   currentPlayerRole,
   onExit 
@@ -421,7 +423,11 @@ export function AutoJudge({
   // 同步游戏状态到数据库
   const syncGameState = async (state: string, phase?: string, actions?: NightAction[]) => {
     try {
-      await updateRoom(roomId, {
+      if (!hostToken) {
+        return;
+      }
+
+      await updateRoom(roomId, hostToken, {
         game_state: state,
         current_phase: phase,
         night_actions: actions || nightActions,

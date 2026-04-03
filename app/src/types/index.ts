@@ -156,6 +156,8 @@ export interface Player {
   is_host: boolean;
   is_alive: boolean;
   joined_at: string;
+  is_connected?: boolean;
+  last_seen_at?: string | null;
 }
 
 // 房间
@@ -165,7 +167,7 @@ export interface Room {
   status: RoomStatus;
   player_count: number; // 不含法官的玩家数
   host_id: string;
-  current_phase: GamePhase;
+  current_phase: GamePhase | string;
   roles: RoleConfig[];
   enable_sheriff: boolean;
   current_round: number;
@@ -184,6 +186,9 @@ export interface LocalPlayerInfo {
   playerId: string;
   roomId: string;
   isHost: boolean;
+  playerToken: string;
+  playerName: string;
+  hostToken?: string | null;
 }
 
 // 游戏记录

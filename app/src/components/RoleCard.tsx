@@ -1,6 +1,39 @@
 import { useState } from 'react';
 import { ROLES, getRoleTeam } from '@/lib/gameConfig';
 import type { RoleType } from '@/types';
+import admirerAvatar from '../../public/avatars/admirer.png';
+import alchemistAvatar from '../../public/avatars/alchemist.png';
+import bomberAvatar from '../../public/avatars/bomber.png';
+import countAvatar from '../../public/avatars/count.png';
+import crowAvatar from '../../public/avatars/crow.png';
+import cupidAvatar from '../../public/avatars/cupid.png';
+import demonhunterAvatar from '../../public/avatars/demonhunter.png';
+import dreamerAvatar from '../../public/avatars/dreamer.png';
+import elderAvatar from '../../public/avatars/elder.png';
+import gargoyleAvatar from '../../public/avatars/gargoyle.png';
+import gravediggerAvatar from '../../public/avatars/gravedigger.png';
+import guardAvatar from '../../public/avatars/guard.png';
+import hiddenwolfAvatar from '../../public/avatars/hiddenwolf.png';
+import hooliganAvatar from '../../public/avatars/hooligan.png';
+import hunterAvatar from '../../public/avatars/hunter.png';
+import idiotAvatar from '../../public/avatars/idiot.png';
+import knightAvatar from '../../public/avatars/knight.png';
+import magicianAvatar from '../../public/avatars/magician.png';
+import miracleAvatar from '../../public/avatars/miracle.png';
+import muterAvatar from '../../public/avatars/muter.png';
+import nightmareAvatar from '../../public/avatars/nightmare.png';
+import princeAvatar from '../../public/avatars/prince.png';
+import pureAvatar from '../../public/avatars/pure.png';
+import seerAvatar from '../../public/avatars/seer.png';
+import thiefAvatar from '../../public/avatars/thief.png';
+import villagerAvatar from '../../public/avatars/villager.png';
+import werewolfAvatar from '../../public/avatars/werewolf.png';
+import whitewolfAvatar from '../../public/avatars/whitewolf.png';
+import witchAvatar from '../../public/avatars/witch.png';
+import wolfbeautyAvatar from '../../public/avatars/wolfbeauty.png';
+import wolfgunAvatar from '../../public/avatars/wolfgun.png';
+import wolfwitchAvatar from '../../public/avatars/wolfwitch.png';
+import cardBackImage from '../../public/cards/card_back.png';
 
 interface RoleCardProps {
   role: RoleType;
@@ -12,43 +45,43 @@ interface RoleCardProps {
 
 // 角色头像图片映射（正方形头像）
 const ROLE_AVATARS: Record<string, string> = {
-  werewolf: '/avatars/werewolf.png',
-  seer: '/avatars/seer.png',
-  witch: '/avatars/witch.png',
-  villager: '/avatars/villager.png',
-  hunter: '/avatars/hunter.png',
-  idiot: '/avatars/idiot.png',
-  guard: '/avatars/guard.png',
-  elder: '/avatars/elder.png',
-  whitewolf: '/avatars/whitewolf.png',
-  wolfgun: '/avatars/wolfgun.png',
-  knight: '/avatars/knight.png',
-  gravedigger: '/avatars/gravedigger.png',
-  crow: '/avatars/crow.png',
-  magician: '/avatars/magician.png',
-  dreamer: '/avatars/dreamer.png',
-  demonhunter: '/avatars/demonhunter.png',
-  muter: '/avatars/muter.png',
-  miracle: '/avatars/miracle.png',
-  pure: '/avatars/pure.png',
-  prince: '/avatars/prince.png',
-  count: '/avatars/count.png',
-  alchemist: '/avatars/alchemist.png',
-  hooligan: '/avatars/hooligan.png',
-  wolfbeauty: '/avatars/wolfbeauty.png',
-  gargoyle: '/avatars/gargoyle.png',
-  wolfwitch: '/avatars/wolfwitch.png',
-  hiddenwolf: '/avatars/hiddenwolf.png',
-  cupid: '/avatars/cupid.png',
-  thief: '/avatars/thief.png',
-  bomber: '/avatars/bomber.png',
-  admirer: '/avatars/admirer.png',
-  nightmare: '/avatars/nightmare.png',
+  werewolf: werewolfAvatar,
+  seer: seerAvatar,
+  witch: witchAvatar,
+  villager: villagerAvatar,
+  hunter: hunterAvatar,
+  idiot: idiotAvatar,
+  guard: guardAvatar,
+  elder: elderAvatar,
+  whitewolf: whitewolfAvatar,
+  wolfgun: wolfgunAvatar,
+  knight: knightAvatar,
+  gravedigger: gravediggerAvatar,
+  crow: crowAvatar,
+  magician: magicianAvatar,
+  dreamer: dreamerAvatar,
+  demonhunter: demonhunterAvatar,
+  muter: muterAvatar,
+  miracle: miracleAvatar,
+  pure: pureAvatar,
+  prince: princeAvatar,
+  count: countAvatar,
+  alchemist: alchemistAvatar,
+  hooligan: hooliganAvatar,
+  wolfbeauty: wolfbeautyAvatar,
+  gargoyle: gargoyleAvatar,
+  wolfwitch: wolfwitchAvatar,
+  hiddenwolf: hiddenwolfAvatar,
+  cupid: cupidAvatar,
+  thief: thiefAvatar,
+  bomber: bomberAvatar,
+  admirer: admirerAvatar,
+  nightmare: nightmareAvatar,
 };
 
 // 获取角色头像图片，如果没有则使用默认
 const getRoleAvatar = (role: RoleType): string => {
-  return ROLE_AVATARS[role] || `/avatars/${role}.png`;
+  return ROLE_AVATARS[role] || villagerAvatar;
 };
 
 export function RoleCard({ 
@@ -87,7 +120,6 @@ export function RoleCard({
     large: 'w-52 h-72',
   };
 
-  const cardBackImage = '/cards/card_back.png';
   const roleAvatar = getRoleAvatar(role);
 
   return (
