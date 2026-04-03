@@ -3,12 +3,13 @@
 ## 当前结构
 
 - `app/`：Vite + React + TypeScript 主项目目录。
-- `app/src/sections/`：首页、创建房间、加入房间、房间内、历史记录、角色介绍、使用指南等主视图。
+- `app/src/sections/`：首页、创建房间、加入房间、房间内、历史记录、角色介绍、使用指南、建议信箱、管理员登录与管理员后台等主视图。
 - `app/src/components/`：角色卡、法官记录面板、警长徽章、电子法官与 UI 组件。
 - `app/src/lib/gameConfig.ts`：角色配置、推荐板子、法官流程、发牌和本地历史记录逻辑。
-- `app/src/lib/supabase.ts`：当前已切回 Supabase 客户端，负责房间 RPC、玩家会话恢复、房主/玩家 token 校验与轮询快照读取。
+- `app/src/lib/supabase.ts`：当前已切回 Supabase 客户端，负责房间 RPC、玩家会话恢复、房主/玩家 token 校验、设备统计、建议信箱与管理员后台 RPC 读取。
 - `app/public/`：角色头像、卡牌等静态资源。
 - `supabase/schema.sql`：版本 1 正式联机方案的建表、触发器、RLS、RPC 与 Realtime 初始化脚本。
+- `supabase/admin_dashboard.sql`：管理员后台增量 SQL，包含管理员映射、设备统计、建议信箱与后台查询/更新 RPC。
 - `.github/workflows/`：GitHub Pages 自动部署流程，当前改为构建后发布到 `gh-pages` 分支。
 - `.trae/rules/`：长期规则、项目框架、待办、迭代记录。
 
@@ -18,3 +19,4 @@
 - 当前版本已重新对接新的 Supabase 项目，并改为通过 RPC + token 会话模型实现轻量安全版联机。
 - 页面主色调为深色渐变，交互以全屏单页切换为主，底部固定操作区较多。
 - GitHub Pages 负责静态站点托管，当前通过 Actions 构建并推送 `gh-pages` 分支；前端通过 Supabase RPC 和轮询快照同步房间与玩家状态。
+- 当前已追加管理员后台第一版能力，包含首页建议信箱入口、管理员登录、基础统计和建议处理视图。
