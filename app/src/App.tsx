@@ -9,6 +9,7 @@ import { GuideSection } from '@/sections/GuideSection';
 import { FeedbackSection } from '@/sections/FeedbackSection';
 import { AdminLoginSection } from '@/sections/AdminLoginSection';
 import { AdminDashboardSection } from '@/sections/AdminDashboardSection';
+import { LegalSection } from '@/sections/LegalSection';
 import {
   getAdminDashboardSummary,
   getAdminProfile,
@@ -39,7 +40,7 @@ import type {
   WinMode,
 } from '@/types';
 
-type View = 'home' | 'create' | 'join' | 'room' | 'history' | 'roles' | 'guide' | 'feedback' | 'admin';
+type View = 'home' | 'create' | 'join' | 'room' | 'history' | 'roles' | 'guide' | 'feedback' | 'admin' | 'legal';
 
 function resolveInitialView(): View {
   if (typeof window === 'undefined') {
@@ -49,6 +50,7 @@ function resolveInitialView(): View {
   const hash = window.location.hash.replace(/^#/, '').replace(/^\//, '');
   if (hash === 'admin') return 'admin';
   if (hash === 'feedback') return 'feedback';
+  if (hash === 'legal') return 'legal';
   return 'home';
 }
 
@@ -126,7 +128,9 @@ function App() {
       ? '#admin'
       : currentView === 'feedback'
         ? '#feedback'
-        : '';
+        : currentView === 'legal'
+          ? '#legal'
+          : '';
 
     const nextUrl = `${window.location.pathname}${window.location.search}${hash}`;
     window.history.replaceState(null, '', nextUrl);
@@ -371,6 +375,7 @@ function App() {
             onViewGuide={() => setCurrentView('guide')}
             onOpenFeedback={() => setCurrentView('feedback')}
             onOpenAdmin={() => setCurrentView('admin')}
+            onOpenLegal={() => setCurrentView('legal')}
           />
         );
       case 'create':
@@ -406,6 +411,8 @@ function App() {
         return <RolesSection onBack={() => setCurrentView('home')} />;
       case 'guide':
         return <GuideSection onBack={() => setCurrentView('home')} />;
+      case 'legal':
+        return <LegalSection onBack={() => setCurrentView('home')} />;
       case 'feedback':
         return (
           <FeedbackSection
