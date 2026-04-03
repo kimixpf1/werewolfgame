@@ -1,4 +1,4 @@
-import { Users, Plus, LogIn, History, BookOpen, HelpCircle } from 'lucide-react';
+import { Users, Plus, LogIn, History, BookOpen, HelpCircle, MessageSquareText, Shield } from 'lucide-react';
 
 interface HomeSectionProps {
   onCreateRoom: () => void;
@@ -6,9 +6,19 @@ interface HomeSectionProps {
   onViewHistory: () => void;
   onViewRoles: () => void;
   onViewGuide: () => void;
+  onOpenFeedback: () => void;
+  onOpenAdmin: () => void;
 }
 
-export function HomeSection({ onCreateRoom, onJoinRoom, onViewHistory, onViewRoles, onViewGuide }: HomeSectionProps) {
+export function HomeSection({
+  onCreateRoom,
+  onJoinRoom,
+  onViewHistory,
+  onViewRoles,
+  onViewGuide,
+  onOpenFeedback,
+  onOpenAdmin,
+}: HomeSectionProps) {
   return (
     <div className="min-h-dvh bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col">
       {/* 头部 */}
@@ -51,7 +61,7 @@ export function HomeSection({ onCreateRoom, onJoinRoom, onViewHistory, onViewRol
         </div>
 
         {/* 底部信息入口 */}
-        <div className="mt-8 flex gap-4 justify-center">
+        <div className="mt-8 flex flex-wrap gap-4 justify-center">
           <button
             onClick={onViewRoles}
             className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-all text-sm"
@@ -66,6 +76,13 @@ export function HomeSection({ onCreateRoom, onJoinRoom, onViewHistory, onViewRol
             <HelpCircle className="w-4 h-4" />
             用法简介
           </button>
+          <button
+            onClick={onOpenFeedback}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-all text-sm"
+          >
+            <MessageSquareText className="w-4 h-4" />
+            建议信箱
+          </button>
         </div>
 
         {/* 特性说明 */}
@@ -76,8 +93,15 @@ export function HomeSection({ onCreateRoom, onJoinRoom, onViewHistory, onViewRol
       </div>
 
       {/* 底部 */}
-      <div className="p-4 text-center text-slate-600 text-sm">
-        狼人杀发牌员 - 让线下狼人杀更便捷
+      <div className="p-4 text-center text-slate-600 text-sm space-y-2">
+        <div>狼人杀发牌员 - 让线下狼人杀更便捷</div>
+        <button
+          onClick={onOpenAdmin}
+          className="mx-auto flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+        >
+          <Shield className="w-3.5 h-3.5" />
+          管理员后台
+        </button>
       </div>
     </div>
   );
