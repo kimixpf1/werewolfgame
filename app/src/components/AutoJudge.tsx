@@ -51,11 +51,10 @@ interface AutoJudgeProps {
 const useSpeech = () => {
   const [isReady, setIsReady] = useState(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const unlockedRef = useRef(false);
 
   useEffect(() => {
-    // 检查是否是微信浏览器
-    const isWechat = /MicroMessenger/i.test(navigator.userAgent);
-    
     if (typeof window !== 'undefined') {
       if (window.speechSynthesis) {
         synthRef.current = window.speechSynthesis;
@@ -70,60 +69,91 @@ const useSpeech = () => {
           synthRef.current.onvoiceschanged = loadVoices;
         }
       }
-      
-      // 微信浏览器使用备用方案
-      if (isWechat) {
-        setIsReady(true);
+
+      if ('AudioContext' in window || 'webkitAudioContext' in window) {
+        const ContextCtor = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+        audioContextRef.current = new ContextCtor();
       }
+
+      // 某些移动端环境即使 voices 延迟，也允许先尝试 speak。
+      setIsReady(true);
     }
+
+    const unlockAudio = () => {
+      if (unlockedRef.current) {
+        return;
+      }
+
+      unlockedRef.current = true;
+      void audioContextRef.current?.resume();
+
+      if (synthRef.current) {
+        try {
+          const warmup = new SpeechSynthesisUtterance(' ');
+          warmup.volume = 0;
+          synthRef.current.cancel();
+          synthRef.current.speak(warmup);
+        } catch (error) {
+          console.warn('Speech warmup failed:', error);
+        }
+      }
+    };
+
+    window.addEventListener('touchstart', unlockAudio, { once: true });
+    window.addEventListener('click', unlockAudio, { once: true });
+    document.addEventListener('WeixinJSBridgeReady', unlockAudio as EventListener, { once: true });
+
+    return () => {
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('click', unlockAudio);
+      document.removeEventListener('WeixinJSBridgeReady', unlockAudio as EventListener);
+      audioContextRef.current?.close().catch(() => undefined);
+    };
+  }, []);
+
+  const unlock = useCallback(() => {
+    if (unlockedRef.current) {
+      return;
+    }
+    unlockedRef.current = true;
+    void audioContextRef.current?.resume();
   }, []);
 
   const speak = useCallback((text: string, onEnd?: () => void) => {
-    const isWechat = /MicroMessenger/i.test(navigator.userAgent);
-    
-    // 微信浏览器：使用震动提示+文字
-    if (isWechat) {
+    if (!synthRef.current) {
       if (navigator.vibrate) {
         navigator.vibrate([100, 50, 100]);
       }
-      // 延迟后回调，让用户看到文字提示
-      setTimeout(() => {
-        onEnd?.();
-      }, 2000);
-      return;
-    }
-    
-    // 普通浏览器：使用语音合成
-    if (!synthRef.current) {
       onEnd?.();
       return;
     }
-    
-    // 取消之前的语音
+
     synthRef.current.cancel();
-    
-    // 创建新的语音
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'zh-CN';
     utterance.rate = 0.9;
     utterance.pitch = 1;
     utterance.volume = 1;
-    
-    // 尝试使用中文语音
+
     const voices = synthRef.current.getVoices();
     const zhVoice = voices.find(v => v.lang.includes('zh') || v.lang.includes('CN'));
     if (zhVoice) {
       utterance.voice = zhVoice;
     }
-    
+
     utterance.onend = () => {
       onEnd?.();
     };
-    
-    utterance.onerror = () => {
+
+    utterance.onerror = (error) => {
+      console.warn('Speech synthesis failed, fallback to vibration:', error);
+      if (navigator.vibrate) {
+        navigator.vibrate([100, 50, 100]);
+      }
       onEnd?.();
     };
-    
+
     synthRef.current.speak(utterance);
   }, []);
 
@@ -131,7 +161,7 @@ const useSpeech = () => {
     synthRef.current?.cancel();
   }, []);
 
-  return { speak, stop, isReady };
+  return { speak, stop, isReady, unlock };
 };
 
 export function AutoJudge({ 
@@ -161,9 +191,14 @@ export function AutoJudge({
   const [showMyAction, setShowMyAction] = useState(false);
   const [actionResult, setActionResult] = useState<string>('');
   
-  const { speak } = useSpeech();
+  const waitingForActionRef = useRef(false);
+  const { speak, unlock } = useSpeech();
   const alivePlayers = players.filter(p => !p.is_host && p.is_alive);
   const isWechat = /MicroMessenger/i.test(navigator.userAgent);
+
+  useEffect(() => {
+    waitingForActionRef.current = waitingForAction;
+  }, [waitingForAction]);
   
   // 判断是否有某个角色
   const hasRole = useCallback((role: RoleType) => {
@@ -440,6 +475,7 @@ export function AutoJudge({
   
   // 开始夜晚
   const startNight = async () => {
+    unlock();
     setGameState('night');
     setCurrentPhase('start');
     setNightActions([]);
@@ -501,7 +537,7 @@ export function AutoJudge({
       // 等待操作完成
       await new Promise<void>((resolve) => {
         const checkInterval = setInterval(() => {
-          if (!waitingForAction) {
+          if (!waitingForActionRef.current) {
             clearInterval(checkInterval);
             resolve();
           }
