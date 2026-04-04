@@ -70,10 +70,11 @@
 - 已把前端相关报错统一改成清晰提示，避免线上继续直接暴露生硬的 schema cache / function not found 错误。
 - 已将管理员后台中的反馈相关统计口径改为始终根据完整反馈列表重算，不再在 `admin_get_dashboard_summary` 返回了旧值或半更新值时直接沿用，避免统计卡片和图表继续失真。
 - 已把 `supabase/admin_dashboard.sql` 里的 `admin_delete_feedback` 改为幂等返回：当建议已不存在时返回 `false` 而不是抛异常，方便后续在新版 SQL 生效后稳定处理“已读后删除”与重复删除场景。
+- 已将本轮修正以提交 `5d6cf57` 推送到远端 `main`；远端最新提交已可通过 GitHub API 查询到，说明自动部署触发源已经就位。
 
 ### 下一步
 
-- 推送本轮后台拆页改动并等待新的 `gh-pages` 生产包完成部署。
+- 等待 `main` 上的最新提交完成 `gh-pages` 自动部署。
 - 在正式线上地址验证管理员后台是否已变为两个单独页面，并复核建房自动推荐仍保持最新版本。
 - 重新完整执行最新版 `supabase/admin_dashboard.sql`，补齐 `feedback_messages.is_read/read_at` 字段，以及删除、批量删除、批量已读相关 RPC，并触发 schema reload。
 - 在 SQL 生效后复测“已读后删除”“多选批量删除”“已读/未读筛选”和统计面板数值是否与真实数据一致。
