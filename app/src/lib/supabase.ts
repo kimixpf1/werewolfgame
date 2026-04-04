@@ -91,6 +91,7 @@ function normalizeRoom(raw: any): Room & Record<string, any> {
   return {
     id: raw.id,
     created_at: raw.created_at || new Date().toISOString(),
+    updated_at: raw.updated_at || raw.created_at || new Date().toISOString(),
     status: raw.status || 'waiting',
     player_count: raw.player_count || 0,
     host_id: raw.host_id || '',
@@ -101,6 +102,9 @@ function normalizeRoom(raw: any): Room & Record<string, any> {
     sheriff_id: raw.sheriff_id ?? null,
     sheriff_torn: raw.sheriff_torn ?? false,
     win_mode: raw.win_mode || 'side',
+    game_state: raw.game_state ?? null,
+    night_actions: Array.isArray(raw.night_actions) ? raw.night_actions : [],
+    enable_auto_judge: !!raw.enable_auto_judge,
     game_result: raw.game_result ?? null,
     ...raw,
   };

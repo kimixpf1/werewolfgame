@@ -133,6 +133,20 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     };
   }, [localPlayer]);
 
+  useEffect(() => {
+    const syncedState = room.game_state && typeof room.game_state === 'object'
+      ? room.game_state
+      : null;
+    const shouldOpenAutoJudge = !!room.enable_auto_judge && (
+      !!syncedState ||
+      room.status === 'playing'
+    );
+
+    if (shouldOpenAutoJudge) {
+      setShowAutoJudge(true);
+    }
+  }, [room.enable_auto_judge, room.game_state, room.status]);
+
   const copyRoomInfo = () => {
     navigator.clipboard.writeText(room.id);
     setCopied(true);
@@ -179,6 +193,32 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     saveGameRecord(record);
     
     setLoading(false);
+  };
+
+  const handleOpenAutoJudge = async () => {
+    if (!isRoomHost) return;
+    if (!localPlayer.hostToken) return;
+
+    const nextState = room.status === 'playing' ? 'dealing' : 'waiting';
+
+    setLoading(true);
+    await updateRoom(room.id, localPlayer.hostToken, {
+      enable_auto_judge: true,
+      game_state: {
+        state: nextState,
+        detailPhase: nextState,
+        round: room.current_round || 1,
+        waitingForAction: false,
+        updatedAt: new Date().toISOString(),
+      },
+      current_phase: room.status === 'ended' ? 'ended' : 'night',
+      current_round: room.current_round || 1,
+      updated_at: new Date().toISOString(),
+    });
+
+    setShowAutoJudge(true);
+    setLoading(false);
+    loadRoomSnapshot();
   };
 
   const handleRestart = async () => {
@@ -942,7 +982,7 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
           {room.status === 'waiting' && (
             <div className="space-y-3">
               <button
-                onClick={() => setShowAutoJudge(true)}
+                onClick={handleOpenAutoJudge}
                 disabled={players.filter(p => !p.is_host).length !== room.player_count}
                 className="w-full h-12 bg-indigo-600/80 hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-medium flex items-center justify-center gap-2 transition-all"
               >
@@ -964,14 +1004,24 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
           )}
           
           {room.status === 'playing' && (
-            <button
-              onClick={handleRestart}
-              disabled={loading}
-              className="w-full h-14 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium text-lg flex items-center justify-center gap-2 transition-all border border-slate-700"
-            >
-              <RotateCcw className="w-5 h-5" />
-              重新开始
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={handleOpenAutoJudge}
+                disabled={loading}
+                className="w-full h-12 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-xl font-medium flex items-center justify-center gap-2 transition-all"
+              >
+                <Mic className="w-5 h-5" />
+                打开电子法官
+              </button>
+              <button
+                onClick={handleRestart}
+                disabled={loading}
+                className="w-full h-14 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium text-lg flex items-center justify-center gap-2 transition-all border border-slate-700"
+              >
+                <RotateCcw className="w-5 h-5" />
+                重新开始
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -1063,6 +1113,11 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
             roles={room.roles.map(r => r.type as RoleType)}
             isHost={isRoomHost}
             hostToken={localPlayer.hostToken}
+            roomStatus={room.status}
+            syncedState={room.game_state}
+            syncedRound={room.current_round}
+            syncedActions={room.night_actions}
+            autoJudgeEnabled={room.enable_auto_judge}
             enableSheriff={room.enable_sheriff}
             currentPlayerId={localPlayer.playerId}
             currentPlayerRole={myRole || undefined}

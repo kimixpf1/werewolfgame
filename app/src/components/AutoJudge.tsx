@@ -4,7 +4,7 @@ import {
   Play, SkipForward, Users, Eye,
   Crown, Skull, RotateCcw, LogOut, Shield, Heart, Bell
 } from 'lucide-react';
-import type { Player, RoleType } from '@/types';
+import type { AutoJudgePhaseState, AutoJudgeSyncState, Player, RoleType, RoomStatus } from '@/types';
 import { ROLES } from '@/lib/gameConfig';
 import { updateRoom } from '@/lib/supabase';
 
@@ -42,10 +42,60 @@ interface AutoJudgeProps {
   roles: RoleType[];
   isHost: boolean;
   hostToken?: string | null;
+  roomStatus?: RoomStatus;
+  syncedState?: AutoJudgeSyncState | string | null;
+  syncedRound?: number;
+  syncedActions?: unknown[];
+  autoJudgeEnabled?: boolean;
   enableSheriff?: boolean;
   currentPlayerId?: string;
   currentPlayerRole?: RoleType;
   onExit: () => void;
+}
+
+const AUTO_JUDGE_STATES: AutoJudgePhaseState[] = ['waiting', 'dealing', 'night', 'day', 'ended'];
+
+function isAutoJudgePhaseState(value: unknown): value is AutoJudgePhaseState {
+  return typeof value === 'string' && AUTO_JUDGE_STATES.includes(value as AutoJudgePhaseState);
+}
+
+function normalizeSyncedState(raw: AutoJudgeSyncState | string | null | undefined): AutoJudgeSyncState | null {
+  if (!raw) {
+    return null;
+  }
+
+  if (typeof raw === 'string') {
+    return isAutoJudgePhaseState(raw) ? { state: raw } : null;
+  }
+
+  if (!isAutoJudgePhaseState(raw.state)) {
+    return null;
+  }
+
+  return {
+    state: raw.state,
+    detailPhase: typeof raw.detailPhase === 'string' ? raw.detailPhase : null,
+    round: typeof raw.round === 'number' ? raw.round : undefined,
+    waitingForAction: !!raw.waitingForAction,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : undefined,
+  };
+}
+
+function normalizeNightActions(raw: unknown): NightAction[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .map((item) => ({
+      phaseId: typeof item.phaseId === 'string' ? item.phaseId : '',
+      playerId: typeof item.playerId === 'string' ? item.playerId : undefined,
+      targetId: typeof item.targetId === 'string' ? item.targetId : undefined,
+      secondTargetId: typeof item.secondTargetId === 'string' ? item.secondTargetId : undefined,
+      action: typeof item.action === 'string' ? item.action : undefined,
+    }))
+    .filter((item) => item.phaseId);
 }
 
 // 语音合成 - 兼容微信浏览器
@@ -171,20 +221,30 @@ export function AutoJudge({
   roles, 
   isHost, 
   hostToken,
+  roomStatus = 'waiting',
+  syncedState,
+  syncedRound = 1,
+  syncedActions,
+  autoJudgeEnabled = false,
   enableSheriff = true,
   currentPlayerId,
   currentPlayerRole,
   onExit 
 }: AutoJudgeProps) {
+  const initialSyncedState = normalizeSyncedState(syncedState);
+  const initialRound = initialSyncedState?.round ?? syncedRound ?? 1;
+  const initialGameState: AutoJudgePhaseState =
+    initialSyncedState?.state ?? (roomStatus === 'playing' && autoJudgeEnabled ? 'dealing' : 'waiting');
+
   // 状态
-  const [gameState, setGameState] = useState<'waiting' | 'dealing' | 'night' | 'day' | 'ended'>('waiting');
-  const [currentRound, setCurrentRound] = useState(1);
-  const [currentPhase, setCurrentPhase] = useState<string>('');
+  const [gameState, setGameState] = useState<AutoJudgePhaseState>(initialGameState);
+  const [currentRound, setCurrentRound] = useState(initialRound);
+  const [currentPhase, setCurrentPhase] = useState<string>(initialSyncedState?.detailPhase ?? '');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [deathInfo, setDeathInfo] = useState<DeathInfo[]>([]);
   const [showDeathInfo, setShowDeathInfo] = useState(false);
-  const [nightActions, setNightActions] = useState<NightAction[]>([]);
+  const [nightActions, setNightActions] = useState<NightAction[]>(() => normalizeNightActions(syncedActions));
   const [selectedPlayer, setSelectedPlayer] = useState<string>('');
   const [selectedSecondPlayer, setSelectedPlayer2] = useState<string>('');
   const [witchSaveUsed, setWitchSaveUsed] = useState(false);
@@ -200,6 +260,43 @@ export function AutoJudge({
   useEffect(() => {
     waitingForActionRef.current = waitingForAction;
   }, [waitingForAction]);
+
+  useEffect(() => {
+    const nextSyncedState = normalizeSyncedState(syncedState);
+    const nextActions = normalizeNightActions(syncedActions);
+
+    if (nextSyncedState?.state) {
+      setGameState(nextSyncedState.state);
+    } else if (roomStatus === 'playing' && autoJudgeEnabled) {
+      setGameState((prev) => (prev === 'waiting' ? 'dealing' : prev));
+    }
+
+    if (typeof nextSyncedState?.round === 'number') {
+      setCurrentRound(nextSyncedState.round);
+    } else if (typeof syncedRound === 'number' && syncedRound > 0) {
+      setCurrentRound(syncedRound);
+    }
+
+    if (typeof nextSyncedState?.detailPhase === 'string') {
+      setCurrentPhase(nextSyncedState.detailPhase);
+    } else if (nextSyncedState?.state === 'day') {
+      setCurrentPhase('day_start');
+    }
+
+    setWaitingForAction(!!nextSyncedState?.waitingForAction);
+    setNightActions(nextActions);
+  }, [autoJudgeEnabled, roomStatus, syncedActions, syncedRound, syncedState]);
+
+  useEffect(() => {
+    if (!waitingForAction || !currentPhase) {
+      return;
+    }
+
+    if (nightActions.some((action) => action.phaseId === currentPhase)) {
+      setWaitingForAction(false);
+      setShowMyAction(false);
+    }
+  }, [currentPhase, nightActions, waitingForAction]);
   
   // 判断是否有某个角色
   const hasRole = useCallback((role: RoleType) => {
@@ -207,11 +304,11 @@ export function AutoJudge({
   }, [roles]);
   
   // 获取夜晚流程
-  const getNightPhases = useCallback((): NightPhase[] => {
+  const getNightPhases = useCallback((round: number = currentRound): NightPhase[] => {
     const phases: NightPhase[] = [];
     
     // 第一夜特殊流程
-    if (currentRound === 1) {
+    if (round === 1) {
       if (hasRole('cupid')) {
         phases.push({
           id: 'cupid',
@@ -428,7 +525,7 @@ export function AutoJudge({
     }
     
     // 猎魔人（第二晚开始）
-    if (hasRole('demonhunter') && currentRound >= 2) {
+    if (hasRole('demonhunter') && round >= 2) {
       phases.push({
         id: 'demonhunter',
         name: '猎魔人',
@@ -441,7 +538,7 @@ export function AutoJudge({
     }
     
     // 守墓人（第二晚开始）
-    if (hasRole('gravedigger') && currentRound >= 2) {
+    if (hasRole('gravedigger') && round >= 2) {
       phases.push({
         id: 'gravedigger',
         name: '守墓人',
@@ -456,27 +553,45 @@ export function AutoJudge({
     return phases;
   }, [currentRound, hasRole]);
   
-  // 同步游戏状态到数据库
-  const syncGameState = async (state: string, phase?: string, actions?: NightAction[]) => {
+  const syncGameState = useCallback(async (
+    state: AutoJudgePhaseState,
+    detailPhase?: string,
+    actions?: NightAction[],
+    options?: { round?: number; waitingForAction?: boolean }
+  ) => {
     try {
       if (!hostToken) {
         return;
       }
 
+      const round = options?.round ?? currentRound;
+      const phaseBucket: RoomStatus | 'night' | 'day' | 'ended' =
+        state === 'day' ? 'day' : state === 'ended' ? 'ended' : 'night';
+      const nextActions = actions ?? nightActions;
+
       await updateRoom(roomId, hostToken, {
-        game_state: state,
-        current_phase: phase,
-        night_actions: actions || nightActions,
+        enable_auto_judge: true,
+        game_state: {
+          state,
+          detailPhase: detailPhase ?? null,
+          round,
+          waitingForAction: options?.waitingForAction ?? false,
+          updatedAt: new Date().toISOString(),
+        },
+        current_phase: phaseBucket,
+        current_round: round,
+        night_actions: nextActions,
         updated_at: new Date().toISOString()
       });
     } catch (e) {
       console.error('Sync game state failed:', e);
     }
-  };
+  }, [currentRound, hostToken, nightActions, roomId]);
   
   // 开始夜晚
-  const startNight = async () => {
+  const startNight = async (round: number = currentRound) => {
     unlock();
+    setCurrentRound(round);
     setGameState('night');
     setCurrentPhase('start');
     setNightActions([]);
@@ -486,22 +601,22 @@ export function AutoJudge({
     setShowMyAction(false);
     setActionResult('');
     
-    await syncGameState('night', 'start', []);
+    await syncGameState('night', 'start', [], { round, waitingForAction: false });
     
     if (voiceEnabled) {
       setIsSpeaking(true);
-      speak(`天黑了，请所有人闭眼。第${currentRound}夜开始。`, () => {
+      speak(`天黑了，请所有人闭眼。第${round}夜开始。`, () => {
         setIsSpeaking(false);
-        setTimeout(() => runNightPhases(), 800);
+        setTimeout(() => runNightPhases(round), 800);
       });
     } else {
-      setTimeout(() => runNightPhases(), 500);
+      setTimeout(() => runNightPhases(round), 500);
     }
   };
   
   // 执行夜晚流程
-  const runNightPhases = async () => {
-    const phases = getNightPhases();
+  const runNightPhases = async (round: number = currentRound) => {
+    const phases = getNightPhases(round);
     
     for (let i = 0; i < phases.length; i++) {
       const phase = phases[i];
@@ -512,7 +627,7 @@ export function AutoJudge({
       setShowMyAction(false);
       setActionResult('');
       
-      await syncGameState('night', phase.id);
+      await syncGameState('night', phase.id, undefined, { round, waitingForAction: true });
       
       // 播报睁眼
       if (voiceEnabled) {
@@ -572,7 +687,7 @@ export function AutoJudge({
   
   // 提交操作
   const submitAction = async () => {
-    const phase = getNightPhases().find(p => p.id === currentPhase);
+    const phase = getNightPhases(currentRound).find(p => p.id === currentPhase);
     if (!phase) return;
     
     const action: NightAction = {
@@ -583,12 +698,15 @@ export function AutoJudge({
       action: witchSaveUsed ? 'save' : witchPoisonUsed ? 'poison' : undefined
     };
     
-    const newActions = [...nightActions, action];
+    const newActions = [
+      ...nightActions.filter((item) => !(item.phaseId === action.phaseId && item.playerId === action.playerId)),
+      action
+    ];
     setNightActions(newActions);
     setWaitingForAction(false);
     setShowMyAction(false);
     
-    await syncGameState('night', currentPhase, newActions);
+    await syncGameState('night', currentPhase, newActions, { round: currentRound, waitingForAction: false });
     
     // 显示操作结果
     if (phase.actionType === 'single' && selectedPlayer) {
@@ -610,7 +728,7 @@ export function AutoJudge({
   const skipAction = async () => {
     setWaitingForAction(false);
     setShowMyAction(false);
-    await syncGameState('night', currentPhase, nightActions);
+    await syncGameState('night', currentPhase, nightActions, { round: currentRound, waitingForAction: false });
   };
   
   // 结束夜晚
@@ -658,7 +776,7 @@ export function AutoJudge({
     }
     
     setDeathInfo(deaths);
-    await syncGameState('day', nextDayPhase, nightActions);
+    await syncGameState('day', nextDayPhase, nightActions, { round: currentRound, waitingForAction: false });
     
     // 播报天亮
     if (voiceEnabled) {
@@ -674,10 +792,6 @@ export function AutoJudge({
     }
   };
   
-  // 获取当前环节信息
-  const currentPhaseInfo = getNightPhases().find(p => p.id === currentPhase);
-  const isMyTurn = currentPlayerRole === currentPhaseInfo?.role;
-
   const testVoicePlayback = () => {
     unlock();
     if (!voiceEnabled) {
@@ -687,6 +801,152 @@ export function AutoJudge({
     speak('电子法官语音已解锁，现在可以开始主持流程。', () => {
       setIsSpeaking(false);
     });
+  };
+
+  useEffect(() => {
+    const synced = normalizeSyncedState(syncedState);
+    if (!isHost || !hostToken || !autoJudgeEnabled || synced?.state) {
+      return;
+    }
+
+    const initialState: AutoJudgePhaseState = roomStatus === 'playing' ? 'dealing' : 'waiting';
+    void syncGameState(initialState, initialState, normalizeNightActions(syncedActions), {
+      round: syncedRound || 1,
+      waitingForAction: false,
+    });
+  }, [autoJudgeEnabled, hostToken, isHost, roomStatus, syncGameState, syncedActions, syncedRound, syncedState]);
+
+  const currentNightPhases = getNightPhases(currentRound);
+  const currentPhaseInfo = currentNightPhases.find(p => p.id === currentPhase);
+  const isMyTurn = currentPlayerRole === currentPhaseInfo?.role;
+  const hasSubmittedCurrentPhase = !!currentPlayerId && !!currentPhase && nightActions.some(
+    (action) => action.phaseId === currentPhase && action.playerId === currentPlayerId
+  );
+  const shouldShowPlayerAction = !!currentPhaseInfo && isMyTurn && !hasSubmittedCurrentPhase && (!isHost || showMyAction);
+  const canSubmitAction = !!currentPhaseInfo && (
+    currentPhaseInfo.actionType === 'none'
+      || currentPhaseInfo.actionType === 'witch'
+      || !!selectedPlayer
+  ) && (
+    currentPhaseInfo?.actionType !== 'double' || (!!selectedPlayer && !!selectedSecondPlayer)
+  );
+
+  const renderActionControls = () => {
+    if (!currentPhaseInfo) {
+      return null;
+    }
+
+    return (
+      <>
+        {currentPhaseInfo.actionType === 'witch' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Heart className="w-5 h-5 text-red-400" />
+                <span>使用解药</span>
+              </div>
+              <button
+                onClick={() => setWitchSaveUsed(!witchSaveUsed)}
+                className={`px-3 py-1 rounded text-sm ${
+                  witchSaveUsed ? 'bg-green-600 text-white' : 'bg-slate-600 text-slate-400 hover:bg-slate-500'
+                }`}
+              >
+                {witchSaveUsed ? '已使用' : '使用'}
+              </button>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Skull className="w-5 h-5 text-purple-400" />
+                <span>使用毒药</span>
+              </div>
+              <button
+                onClick={() => setWitchPoisonUsed(!witchPoisonUsed)}
+                className={`px-3 py-1 rounded text-sm ${
+                  witchPoisonUsed ? 'bg-purple-600 text-white' : 'bg-slate-600 text-slate-400 hover:bg-slate-500'
+                }`}
+              >
+                {witchPoisonUsed ? '已使用' : '使用'}
+              </button>
+            </div>
+            {witchPoisonUsed && (
+              <div className="mt-3">
+                <p className="text-sm text-slate-400 mb-2">选择毒杀目标:</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {alivePlayers.map(player => (
+                    <button
+                      key={player.id}
+                      onClick={() => setSelectedPlayer(player.id)}
+                      className={`p-2 rounded text-sm transition-colors ${
+                        selectedPlayer === player.id ? 'bg-purple-600 text-white' : 'bg-slate-700 hover:bg-slate-600'
+                      }`}
+                    >
+                      {player.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {currentPhaseInfo.actionType === 'single' && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              {alivePlayers.map(player => (
+                <button
+                  key={player.id}
+                  onClick={() => setSelectedPlayer(player.id)}
+                  className={`p-3 rounded text-sm transition-colors ${
+                    selectedPlayer === player.id ? 'bg-indigo-600 text-white' : 'bg-slate-700 hover:bg-slate-600'
+                  }`}
+                >
+                  {player.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {currentPhaseInfo.actionType === 'double' && (
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm text-slate-400 mb-2">选择第一名玩家:</p>
+              <div className="grid grid-cols-3 gap-2">
+                {alivePlayers.map(player => (
+                  <button
+                    key={player.id}
+                    onClick={() => setSelectedPlayer(player.id)}
+                    className={`p-2 rounded text-sm transition-colors ${
+                      selectedPlayer === player.id ? 'bg-indigo-600 text-white' : 'bg-slate-700 hover:bg-slate-600'
+                    }`}
+                  >
+                    {player.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {selectedPlayer && (
+              <div>
+                <p className="text-sm text-slate-400 mb-2">选择第二名玩家:</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {alivePlayers.filter(p => p.id !== selectedPlayer).map(player => (
+                    <button
+                      key={player.id}
+                      onClick={() => setSelectedPlayer2(player.id)}
+                      className={`p-2 rounded text-sm transition-colors ${
+                        selectedSecondPlayer === player.id ? 'bg-indigo-600 text-white' : 'bg-slate-700 hover:bg-slate-600'
+                      }`}
+                    >
+                      {player.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </>
+    );
   };
   
   // 渲染等待界面（房主）
@@ -751,11 +1011,17 @@ export function AutoJudge({
           </div>
           
           <button
-            onClick={() => setGameState('dealing')}
+            onClick={async () => {
+              setGameState('dealing');
+              await syncGameState('dealing', 'dealing', nightActions, {
+                round: currentRound,
+                waitingForAction: false,
+              });
+            }}
             className="w-full py-4 bg-purple-600 hover:bg-purple-700 rounded-xl font-bold text-lg flex items-center justify-center gap-2"
           >
             <Play className="w-6 h-6" />
-            开始发牌
+            进入发牌确认
           </button>
         </div>
       </div>
@@ -819,10 +1085,22 @@ export function AutoJudge({
       </div>
     );
   }
+
+  if (gameState === 'dealing' && !isHost) {
+    return (
+      <div className="min-h-dvh bg-slate-900 text-white p-4 flex items-center justify-center">
+        <div className="text-center">
+          <Users className="w-16 h-16 text-blue-400 mx-auto mb-4 animate-pulse" />
+          <h2 className="text-2xl font-bold mb-2">请确认身份</h2>
+          <p className="text-slate-400">法官正在确认所有玩家都已查看角色牌</p>
+        </div>
+      </div>
+    );
+  }
   
   // 渲染夜晚界面 - 房主视角
   if (gameState === 'night' && isHost) {
-    const phases = getNightPhases();
+    const phases = currentNightPhases;
     const phaseIndex = phases.findIndex(p => p.id === currentPhase);
     
     return (
@@ -863,6 +1141,32 @@ export function AutoJudge({
               <div className="mt-3 flex items-center gap-2 text-yellow-400">
                 <Bell className="w-4 h-4" />
                 <span className="text-sm">已通知对应玩家</span>
+              </div>
+            </div>
+          )}
+
+          {!isSpeaking && shouldShowPlayerAction && currentPhaseInfo && (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 mb-4">
+              <div className="flex items-center gap-2 text-emerald-300 mb-2">
+                <Eye className="w-4 h-4" />
+                <span className="text-sm">你当前也需要执行这个角色操作</span>
+              </div>
+              <h3 className="text-lg font-bold mb-3">{currentPhaseInfo.actionPrompt}</h3>
+              {renderActionControls()}
+              <div className="flex gap-3 mt-4">
+                <button
+                  onClick={submitAction}
+                  disabled={!canSubmitAction}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 rounded-xl font-bold"
+                >
+                  提交我的操作
+                </button>
+                <button
+                  onClick={skipAction}
+                  className="py-3 px-5 bg-slate-700 hover:bg-slate-600 rounded-xl"
+                >
+                  跳过
+                </button>
               </div>
             </div>
           )}
@@ -910,7 +1214,7 @@ export function AutoJudge({
   }
   
   // 渲染夜晚界面 - 玩家操作视角
-  if (gameState === 'night' && !isHost && showMyAction && isMyTurn && currentPhaseInfo) {
+  if (gameState === 'night' && !isHost && shouldShowPlayerAction && currentPhaseInfo) {
     return (
       <div className="min-h-dvh bg-slate-950 text-white p-4">
         <div className="max-w-md mx-auto">
@@ -937,134 +1241,13 @@ export function AutoJudge({
             </div>
           )}
           
-          {/* 女巫特殊操作 */}
-          {currentPhaseInfo.actionType === 'witch' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Heart className="w-5 h-5 text-red-400" />
-                  <span>使用解药</span>
-                </div>
-                <button
-                  onClick={() => setWitchSaveUsed(!witchSaveUsed)}
-                  className={`px-3 py-1 rounded text-sm ${
-                    witchSaveUsed 
-                      ? 'bg-green-600 text-white' 
-                      : 'bg-slate-600 text-slate-400 hover:bg-slate-500'
-                  }`}
-                >
-                  {witchSaveUsed ? '已使用' : '使用'}
-                </button>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Skull className="w-5 h-5 text-purple-400" />
-                  <span>使用毒药</span>
-                </div>
-                <button
-                  onClick={() => setWitchPoisonUsed(!witchPoisonUsed)}
-                  className={`px-3 py-1 rounded text-sm ${
-                    witchPoisonUsed 
-                      ? 'bg-purple-600 text-white' 
-                      : 'bg-slate-600 text-slate-400 hover:bg-slate-500'
-                  }`}
-                >
-                  {witchPoisonUsed ? '已使用' : '使用'}
-                </button>
-              </div>
-              {witchPoisonUsed && (
-                <div className="mt-3">
-                  <p className="text-sm text-slate-400 mb-2">选择毒杀目标:</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {alivePlayers.map(player => (
-                      <button
-                        key={player.id}
-                        onClick={() => setSelectedPlayer(player.id)}
-                        className={`p-2 rounded text-sm transition-colors ${
-                          selectedPlayer === player.id
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-slate-700 hover:bg-slate-600'
-                        }`}
-                      >
-                        {player.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          
-          {/* 单选操作 */}
-          {currentPhaseInfo.actionType === 'single' && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-3 gap-2">
-                {alivePlayers.map(player => (
-                  <button
-                    key={player.id}
-                    onClick={() => setSelectedPlayer(player.id)}
-                    className={`p-3 rounded text-sm transition-colors ${
-                      selectedPlayer === player.id
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-700 hover:bg-slate-600'
-                    }`}
-                  >
-                    {player.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {/* 双选操作 */}
-          {currentPhaseInfo.actionType === 'double' && (
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm text-slate-400 mb-2">选择第一名玩家:</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {alivePlayers.map(player => (
-                    <button
-                      key={player.id}
-                      onClick={() => setSelectedPlayer(player.id)}
-                      className={`p-2 rounded text-sm transition-colors ${
-                        selectedPlayer === player.id
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-700 hover:bg-slate-600'
-                      }`}
-                    >
-                      {player.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {selectedPlayer && (
-                <div>
-                  <p className="text-sm text-slate-400 mb-2">选择第二名玩家:</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {alivePlayers.filter(p => p.id !== selectedPlayer).map(player => (
-                      <button
-                        key={player.id}
-                        onClick={() => setSelectedPlayer2(player.id)}
-                        className={`p-2 rounded text-sm transition-colors ${
-                          selectedSecondPlayer === player.id
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-700 hover:bg-slate-600'
-                        }`}
-                      >
-                        {player.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {renderActionControls()}
           
           {/* 操作按钮 */}
           <div className="flex gap-3 mt-6">
             <button
               onClick={submitAction}
-              disabled={currentPhaseInfo.actionType === 'double' && (!selectedPlayer || !selectedSecondPlayer)}
+              disabled={!canSubmitAction}
               className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-700 disabled:text-slate-500 rounded-xl font-bold"
             >
               确认操作
@@ -1082,7 +1265,7 @@ export function AutoJudge({
   }
   
   // 渲染夜晚界面 - 普通玩家等待视角
-  if (gameState === 'night' && !isHost && !showMyAction) {
+  if (gameState === 'night' && !isHost && !shouldShowPlayerAction) {
     return (
       <div className="min-h-dvh bg-slate-950 text-white p-4 flex items-center justify-center">
         <div className="text-center">
@@ -1123,7 +1306,10 @@ export function AutoJudge({
               <button
                 onClick={async () => {
                   setCurrentPhase('day_start');
-                  await syncGameState('day', 'day_start', nightActions);
+                  await syncGameState('day', 'day_start', nightActions, {
+                    round: currentRound,
+                    waitingForAction: false,
+                  });
                   if (voiceEnabled) {
                     const deathText = deathInfo.length > 0
                       ? `警长竞选结束。昨晚死亡的是${deathInfo.map(d => d.playerName).join('、')}`
@@ -1214,10 +1400,11 @@ export function AutoJudge({
           <div className="flex gap-3">
             <button
               onClick={() => {
-                setCurrentRound(r => r + 1);
+                const nextRound = currentRound + 1;
+                setCurrentRound(nextRound);
                 setWitchSaveUsed(false);
                 setWitchPoisonUsed(false);
-                startNight();
+                startNight(nextRound);
               }}
               className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-xl flex items-center justify-center gap-2"
             >

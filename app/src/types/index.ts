@@ -70,6 +70,16 @@ export type RoomStatus = 'waiting' | 'playing' | 'ended';
 // 游戏阶段
 export type GamePhase = 'night' | 'day' | 'voting' | 'ended';
 
+export type AutoJudgePhaseState = 'waiting' | 'dealing' | 'night' | 'day' | 'ended';
+
+export interface AutoJudgeSyncState {
+  state: AutoJudgePhaseState;
+  detailPhase?: string | null;
+  round?: number;
+  waitingForAction?: boolean;
+  updatedAt?: string;
+}
+
 // 夜晚行动记录
 export interface NightAction {
   round: number;
@@ -164,6 +174,7 @@ export interface Player {
 export interface Room {
   id: string;
   created_at: string;
+  updated_at?: string;
   status: RoomStatus;
   player_count: number; // 不含法官的玩家数
   host_id: string;
@@ -174,6 +185,9 @@ export interface Room {
   sheriff_id?: string | null;
   sheriff_torn: boolean;
   win_mode: WinMode;
+  game_state?: AutoJudgeSyncState | string | null;
+  night_actions?: unknown[];
+  enable_auto_judge: boolean;
   game_result?: {
     winner: 'good' | 'evil';
     reason: string;
