@@ -8,7 +8,8 @@ import { RolesSection } from '@/sections/RolesSection';
 import { GuideSection } from '@/sections/GuideSection';
 import { FeedbackSection } from '@/sections/FeedbackSection';
 import { AdminLoginSection } from '@/sections/AdminLoginSection';
-import { AdminDashboardSection } from '@/sections/AdminDashboardSection';
+import { AdminStatsSection } from '@/sections/AdminStatsSection';
+import { AdminFeedbackSection } from '@/sections/AdminFeedbackSection';
 import { LegalSection } from '@/sections/LegalSection';
 import { 
   batchDeleteFeedbackMessages,
@@ -43,7 +44,19 @@ import type {
   WinMode,
 } from '@/types';
 
-type View = 'home' | 'create' | 'join' | 'room' | 'history' | 'roles' | 'guide' | 'feedback' | 'admin' | 'legal';
+type View =
+  | 'home'
+  | 'create'
+  | 'join'
+  | 'room'
+  | 'history'
+  | 'roles'
+  | 'guide'
+  | 'feedback'
+  | 'admin'
+  | 'admin-stats'
+  | 'admin-feedback'
+  | 'legal';
 
 function resolveInitialView(): View {
   if (typeof window === 'undefined') {
@@ -51,6 +64,8 @@ function resolveInitialView(): View {
   }
 
   const hash = window.location.hash.replace(/^#/, '').replace(/^\//, '');
+  if (hash === 'admin-stats' || hash === 'admin/stats') return 'admin-stats';
+  if (hash === 'admin-feedback' || hash === 'admin/feedback') return 'admin-feedback';
   if (hash === 'admin') return 'admin';
   if (hash === 'feedback') return 'feedback';
   if (hash === 'legal') return 'legal';
@@ -134,21 +149,31 @@ function App() {
 
     const hash = currentView === 'admin'
       ? '#admin'
-      : currentView === 'feedback'
-        ? '#feedback'
-        : currentView === 'legal'
-          ? '#legal'
-        : '';
+      : currentView === 'admin-stats'
+        ? '#admin/stats'
+        : currentView === 'admin-feedback'
+          ? '#admin/feedback'
+          : currentView === 'feedback'
+            ? '#feedback'
+            : currentView === 'legal'
+              ? '#legal'
+              : '';
 
     const nextUrl = `${window.location.pathname}${window.location.search}${hash}`;
     window.history.replaceState(null, '', nextUrl);
   }, [currentView]);
 
   useEffect(() => {
-    if (currentView === 'admin' && adminProfile) {
+    if ((currentView === 'admin-stats' || currentView === 'admin-feedback') && adminProfile) {
       void loadAdminDashboard(feedbackFilter, feedbackReadFilter);
     }
   }, [adminProfile, currentView, feedbackFilter, feedbackReadFilter, loadAdminDashboard]);
+
+  useEffect(() => {
+    if (adminProfile && currentView === 'admin') {
+      setCurrentView('admin-stats');
+    }
+  }, [adminProfile, currentView]);
 
   // 创建房间
   const handleCreateRoom = async (
@@ -349,7 +374,7 @@ function App() {
 
     setAdminProfile(data);
     setAdminError('');
-    setCurrentView('admin');
+    setCurrentView('admin-stats');
     setAdminLoading(false);
   };
 
@@ -419,7 +444,7 @@ function App() {
             onViewRoles={() => setCurrentView('roles')}
             onViewGuide={() => setCurrentView('guide')}
             onOpenFeedback={() => setCurrentView('feedback')}
-            onOpenAdmin={() => setCurrentView('admin')}
+            onOpenAdmin={() => setCurrentView(adminProfile ? 'admin-stats' : 'admin')}
             onOpenLegal={() => setCurrentView('legal')}
           />
         );
@@ -481,16 +506,66 @@ function App() {
         }
 
         return (
-          <AdminDashboardSection
+          <AdminStatsSection
+            profile={adminProfile}
+            summary={adminSummary}
+            loading={adminLoading}
+            error={adminError}
+            onBack={() => setCurrentView('home')}
+            onSignOut={handleAdminSignOut}
+            onRefresh={() => loadAdminDashboard(feedbackFilter, feedbackReadFilter)}
+            onOpenFeedback={() => setCurrentView('admin-feedback')}
+          />
+        );
+      case 'admin-stats':
+        if (!adminProfile) {
+          return (
+            <AdminLoginSection
+              onBack={() => setCurrentView('home')}
+              onLogin={handleAdminLogin}
+              loading={adminLoading}
+              error={adminError}
+            />
+          );
+        }
+
+        return (
+          <AdminStatsSection
+            profile={adminProfile}
+            summary={adminSummary}
+            loading={adminLoading}
+            error={adminError}
+            onBack={() => setCurrentView('home')}
+            onSignOut={handleAdminSignOut}
+            onRefresh={() => loadAdminDashboard(feedbackFilter, feedbackReadFilter)}
+            onOpenFeedback={() => setCurrentView('admin-feedback')}
+          />
+        );
+      case 'admin-feedback':
+        if (!adminProfile) {
+          return (
+            <AdminLoginSection
+              onBack={() => setCurrentView('home')}
+              onLogin={handleAdminLogin}
+              loading={adminLoading}
+              error={adminError}
+            />
+          );
+        }
+
+        return (
+          <AdminFeedbackSection
             profile={adminProfile}
             summary={adminSummary}
             feedbackList={feedbackList}
             loading={adminLoading}
+            error={adminError}
             feedbackFilter={feedbackFilter}
             feedbackReadFilter={feedbackReadFilter}
             onBack={() => setCurrentView('home')}
             onSignOut={handleAdminSignOut}
             onRefresh={() => loadAdminDashboard(feedbackFilter, feedbackReadFilter)}
+            onOpenStats={() => setCurrentView('admin-stats')}
             onChangeFilter={setFeedbackFilter}
             onChangeReadFilter={setFeedbackReadFilter}
             onUpdateFeedback={handleAdminFeedbackUpdate}

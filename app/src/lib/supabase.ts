@@ -690,6 +690,28 @@ export async function listFeedbackMessages(
     p_is_read: isRead === 'all' ? null : isRead,
   });
 
+  if (
+    error?.message?.includes('admin_list_feedback')
+    && error.message.includes('schema cache')
+  ) {
+    const legacyResult = await invokeRpc<any[]>('admin_list_feedback', {
+      p_status: status === 'all' ? null : status,
+    });
+
+    if (!legacyResult.error) {
+      const normalized = Array.isArray(legacyResult.data)
+        ? legacyResult.data.map(normalizeFeedback)
+        : [];
+
+      return {
+        data: isRead === 'all'
+          ? normalized
+          : normalized.filter((item) => item.is_read === isRead),
+        error: null,
+      };
+    }
+  }
+
   return {
     data: Array.isArray(data) ? data.map(normalizeFeedback) : null,
     error,
