@@ -1,5 +1,4 @@
-import { Plus, LogIn, History, BookOpen, HelpCircle, MessageSquareText, Shield, ScrollText } from 'lucide-react';
-import werewolfAvatar from '../../public/avatars/werewolf.png';
+import { Users, Plus, LogIn, History, BookOpen, HelpCircle, MessageSquareText, Shield, ScrollText } from 'lucide-react';
 
 interface HomeSectionProps {
   onCreateRoom: () => void;
@@ -27,20 +26,18 @@ export function HomeSection({
       <div className="flex-1 flex flex-col items-center justify-center p-6">
         <div className="text-center mb-12">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-16 h-16 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700 shadow-lg shadow-red-950/30">
-              <img src={werewolfAvatar} alt="狼人头像" className="w-full h-full object-cover" />
+            <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg shadow-purple-500/30">
+              <Users className="w-8 h-8 text-white" />
             </div>
-            <div className="text-left">
-              <h1 className="text-4xl font-bold text-white">狼人杀发牌员</h1>
-              <p className="text-slate-400 text-base">线下狼人杀辅助工具</p>
-            </div>
+            <h1 className="text-4xl font-bold text-white">狼人杀发牌员</h1>
           </div>
+          <p className="text-slate-400 text-lg">线下狼人杀辅助工具</p>
         </div>
 
         <div className="w-full max-w-sm space-y-4">
           <button
             onClick={onCreateRoom}
-            className="w-full h-16 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-2xl shadow-lg shadow-purple-500/25 transition-all hover:scale-[1.02] flex items-center justify-center gap-3 text-lg font-medium"
+            className="w-full h-16 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl shadow-lg shadow-purple-500/25 transition-all hover:scale-[1.02] flex items-center justify-center gap-3 text-lg font-medium"
           >
             <Plus className="w-6 h-6" />
             创建房间
@@ -48,7 +45,7 @@ export function HomeSection({
 
           <button
             onClick={onJoinRoom}
-            className="w-full h-16 bg-slate-900/90 hover:bg-slate-800 text-white rounded-2xl border border-slate-700 transition-all hover:scale-[1.02] flex items-center justify-center gap-3 text-lg font-medium"
+            className="w-full h-16 bg-slate-800 hover:bg-slate-700 text-white rounded-xl border border-slate-700 transition-all hover:scale-[1.02] flex items-center justify-center gap-3 text-lg font-medium"
           >
             <LogIn className="w-6 h-6" />
             加入房间
@@ -56,7 +53,7 @@ export function HomeSection({
 
           <button
             onClick={onViewHistory}
-            className="w-full h-14 text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 rounded-2xl border border-slate-800/80 transition-all flex items-center justify-center gap-3"
+            className="w-full h-14 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-xl transition-all flex items-center justify-center gap-3"
           >
             <History className="w-5 h-5" />
             历史记录

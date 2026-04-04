@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Loader2, Lock, Shield } from 'lucide-react';
+import { ArrowLeft, Loader2, Shield } from 'lucide-react';
 
 interface AdminLoginSectionProps {
   onBack: () => void;
@@ -59,10 +59,6 @@ export function AdminLoginSection({
                 placeholder="密码"
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <Lock className="w-3.5 h-3.5" />
-                支持输入 `xpf` / `admin`
-              </div>
             </div>
 
             {error && (
