@@ -87,6 +87,17 @@ function cloneError(error: unknown) {
   return new Error(typeof error === 'string' ? error : '联机服务暂不可用，请稍后重试');
 }
 
+function isMissingRpcInSchemaCache(error: any, rpcName: string) {
+  return !!(
+    error?.message?.includes(rpcName)
+    && error.message.includes('schema cache')
+  );
+}
+
+function explainAdminSqlMissing(feature: string) {
+  return cloneError(`当前 Supabase 还没执行最新版 admin_dashboard.sql，${feature}暂不可用。请先执行最新 SQL 后再试。`);
+}
+
 function normalizeRoom(raw: any): Room & Record<string, any> {
   return {
     id: raw.id,
@@ -138,6 +149,15 @@ function normalizeSnapshot(payload: SnapshotPayload | null) {
 }
 
 function normalizeFeedback(raw: any): FeedbackMessage {
+  const hasExplicitReadState = Object.prototype.hasOwnProperty.call(raw ?? {}, 'is_read');
+  const normalizedStatus: FeedbackStatus = raw.status ?? 'new';
+  const inferredReadState = normalizedStatus !== 'new'
+    || (
+      typeof raw.updated_at === 'string'
+      && typeof raw.created_at === 'string'
+      && raw.updated_at !== raw.created_at
+    );
+
   return {
     id: Number(raw.id),
     device_id: raw.device_id,
@@ -145,8 +165,8 @@ function normalizeFeedback(raw: any): FeedbackMessage {
     player_name: raw.player_name ?? null,
     contact: raw.contact ?? null,
     content: raw.content ?? '',
-    status: raw.status ?? 'new',
-    is_read: !!raw.is_read,
+    status: normalizedStatus,
+    is_read: hasExplicitReadState ? !!raw.is_read : inferredReadState,
     admin_note: raw.admin_note ?? null,
     read_at: raw.read_at ?? null,
     created_at: raw.created_at,
@@ -690,10 +710,7 @@ export async function listFeedbackMessages(
     p_is_read: isRead === 'all' ? null : isRead,
   });
 
-  if (
-    error?.message?.includes('admin_list_feedback')
-    && error.message.includes('schema cache')
-  ) {
+  if (isMissingRpcInSchemaCache(error, 'admin_list_feedback')) {
     const legacyResult = await invokeRpc<any[]>('admin_list_feedback', {
       p_status: status === 'all' ? null : status,
     });
@@ -744,9 +761,54 @@ export async function markFeedbackRead(
     p_is_read: isRead,
   });
 
+  if (isMissingRpcInSchemaCache(error, 'admin_batch_mark_feedback_read')) {
+    if (!isRead) {
+      return {
+        data: null,
+        error: explainAdminSqlMissing('批量标记未读'),
+      };
+    }
+
+    const { data: feedbackList, error: listError } = await listFeedbackMessages();
+    if (listError) {
+      return {
+        data: null,
+        error: listError,
+      };
+    }
+
+    let updatedCount = 0;
+    for (const feedbackId of feedbackIds) {
+      const target = feedbackList?.find((item) => item.id === feedbackId);
+      if (!target) {
+        continue;
+      }
+
+      const result = await updateFeedbackMessage(
+        feedbackId,
+        target.status,
+        target.admin_note ?? ''
+      );
+      if (result.error) {
+        return {
+          data: updatedCount,
+          error: result.error,
+        };
+      }
+      updatedCount += 1;
+    }
+
+    return {
+      data: updatedCount,
+      error: null,
+    };
+  }
+
   return {
     data: typeof data === 'number' ? data : Number(data ?? 0),
-    error,
+    error: isMissingRpcInSchemaCache(error, 'admin_batch_mark_feedback_read')
+      ? explainAdminSqlMissing(isRead ? '标记已读' : '标记未读')
+      : error,
   };
 }
 
@@ -759,7 +821,9 @@ export async function deleteFeedbackMessage(
 
   return {
     data: !!data,
-    error,
+    error: isMissingRpcInSchemaCache(error, 'admin_delete_feedback')
+      ? explainAdminSqlMissing('删除建议')
+      : error,
   };
 }
 
@@ -770,8 +834,32 @@ export async function batchDeleteFeedbackMessages(
     p_feedback_ids: feedbackIds,
   });
 
+  if (isMissingRpcInSchemaCache(error, 'admin_batch_delete_feedback')) {
+    let deletedCount = 0;
+
+    for (const feedbackId of feedbackIds) {
+      const result = await deleteFeedbackMessage(feedbackId);
+      if (result.error) {
+        return {
+          data: deletedCount,
+          error: result.error,
+        };
+      }
+      if (result.data) {
+        deletedCount += 1;
+      }
+    }
+
+    return {
+      data: deletedCount,
+      error: null,
+    };
+  }
+
   return {
     data: typeof data === 'number' ? data : Number(data ?? 0),
-    error,
+    error: isMissingRpcInSchemaCache(error, 'admin_batch_delete_feedback')
+      ? explainAdminSqlMissing('批量删除建议')
+      : error,
   };
 }

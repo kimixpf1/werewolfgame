@@ -4,9 +4,9 @@
 
 ### 本次目标
 
-- 将管理员后台从同页分区重构为两个单独页面：玩家统计页与建议信箱页。
-- 调整后台入口、hash 路由与返回逻辑，保证管理员登录后进入独立页面而不是标签切换。
-- 完成改造后重新构建、发布并核对正式线上页面结构。
+- 继续核准管理员统计页的真实数据口径，确保卡片、图表与建议信箱实际数据一致。
+- 继续打通建议信箱已读、删除和多选批处理链路，尤其避免“已读后删除”继续报错。
+- 重新构建、推送并部署本轮后台修正，同时为 Supabase 补执行最新版 `admin_dashboard.sql` 做准备。
 
 ### 当前状态
 
@@ -63,12 +63,20 @@
 - 已删除旧的 `AdminDashboardSection` 单页标签实现，本地静态预览中已完成真实登录点击验证：登录后进入“玩家统计中心”，再跳转到“建议信箱”页面，确认两者已不再处于同一页。
 - 已补充 `admin_list_feedback` 旧签名兼容回退，解决 Supabase 端 schema cache 尚未刷新到 `p_is_read` 参数时信箱列表报错的问题；旧环境下阅读筛选改由前端兜底。
 - 已重新强制构建 `app/dist`，并确认产物中已包含“玩家统计中心”“进入建议信箱”“返回玩家统计”等新页面文案。
+- 已继续兼容旧版管理员后端：当前前端会在 `admin_get_dashboard_summary` 缺少 `unread/read/processing/resolved` 字段、`admin_list_feedback` 缺少 `is_read` 字段时，根据完整反馈列表补算未读、已读、处理中、已完结等统计，并用 `updated_at != created_at` 兼容旧接口下“新建议已读”的显示。
+- 已修正统计页处理进度口径，避免把“待处理”和“处理中”重复统计；当前卡片改为展示“未完结”，进度图改为“待处理 / 处理中 / 已完结”三段互斥统计。
+- 已在本地静态预览 `http://localhost:4179` 完成真人验收：登录后台后，统计页显示“未读 1 / 未完结 2”，信箱页能正确展示旧数据为“已读”、新数据为“未读”，单条已读与批量已读均可在旧 RPC 环境下正常生效，且批量已读后多选会自动清空。
+- 已通过 Node 直连真实 Supabase 验证当前线上库仍缺少最新版管理员 SQL：`feedback_messages.is_read` 列不存在，`admin_delete_feedback`、`admin_batch_delete_feedback`、`admin_batch_mark_feedback_read` 等 RPC 也未进入 schema cache；因此线上“删除建议”和“批量删除”目前不是前端问题，而是数据库尚未补齐最新版 `admin_dashboard.sql`。
+- 已把前端相关报错统一改成清晰提示，避免线上继续直接暴露生硬的 schema cache / function not found 错误。
+- 已将管理员后台中的反馈相关统计口径改为始终根据完整反馈列表重算，不再在 `admin_get_dashboard_summary` 返回了旧值或半更新值时直接沿用，避免统计卡片和图表继续失真。
+- 已把 `supabase/admin_dashboard.sql` 里的 `admin_delete_feedback` 改为幂等返回：当建议已不存在时返回 `false` 而不是抛异常，方便后续在新版 SQL 生效后稳定处理“已读后删除”与重复删除场景。
 
 ### 下一步
 
 - 推送本轮后台拆页改动并等待新的 `gh-pages` 生产包完成部署。
 - 在正式线上地址验证管理员后台是否已变为两个单独页面，并复核建房自动推荐仍保持最新版本。
-- 如 Supabase 端仍未完整刷新 `admin_list_feedback(text, boolean)` 新签名，重新执行最新版 `supabase/admin_dashboard.sql` 并触发 schema reload。
+- 重新完整执行最新版 `supabase/admin_dashboard.sql`，补齐 `feedback_messages.is_read/read_at` 字段，以及删除、批量删除、批量已读相关 RPC，并触发 schema reload。
+- 在 SQL 生效后复测“已读后删除”“多选批量删除”“已读/未读筛选”和统计面板数值是否与真实数据一致。
 - 在正式线上地址继续做多玩家全链路联机验收，并确认管理员功能未影响原有联机流程。
 - 等待首页视觉升级与法务页的新生产包完成部署，并在正式地址继续验收。
 - 继续完善电子法官的主持词流程、夜晚结果只给房主看与微信内语音稳定性，并在真实多端场景补做多人同步验收。

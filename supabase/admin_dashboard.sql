@@ -439,11 +439,7 @@ begin
   delete from public.feedback_messages
   where id = p_feedback_id;
 
-  if not found then
-    raise exception '建议不存在';
-  end if;
-
-  return true;
+  return found;
 end;
 $$;
 

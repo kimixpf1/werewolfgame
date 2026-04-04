@@ -72,6 +72,35 @@ function resolveInitialView(): View {
   return 'home';
 }
 
+function mergeAdminSummaryWithFeedback(
+  summary: AdminDashboardSummary | null,
+  allFeedback: FeedbackMessage[]
+): AdminDashboardSummary | null {
+  if (!summary) {
+    return null;
+  }
+
+  const unreadFeedback = allFeedback.filter((item) => !item.is_read).length;
+  const readFeedback = allFeedback.length - unreadFeedback;
+  const processingFeedback = allFeedback.filter((item) => item.status === 'processing').length;
+  const pendingFeedback = allFeedback.filter((item) => item.status === 'new' || item.status === 'processing').length;
+  const resolvedFeedback = allFeedback.filter(
+    (item) => item.status === 'done' || item.status === 'ignored'
+  ).length;
+
+  return {
+    ...summary,
+    // Feedback-related cards and charts always derive from the full list so the
+    // admin panel stays accurate even when the backend summary RPC is stale.
+    total_feedback: allFeedback.length,
+    unread_feedback: unreadFeedback,
+    read_feedback: readFeedback,
+    pending_feedback: pendingFeedback,
+    processing_feedback: processingFeedback,
+    resolved_feedback: resolvedFeedback,
+  };
+}
+
 function App() {
   const [currentView, setCurrentView] = useState<View>(() => resolveInitialView());
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
@@ -83,6 +112,7 @@ function App() {
   const [adminError, setAdminError] = useState('');
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [adminSummary, setAdminSummary] = useState<AdminDashboardSummary | null>(null);
+  const [, setAllFeedbackList] = useState<FeedbackMessage[]>([]);
   const [feedbackList, setFeedbackList] = useState<FeedbackMessage[]>([]);
   const [feedbackFilter, setFeedbackFilter] = useState<FeedbackStatus | 'all'>('all');
   const [feedbackReadFilter, setFeedbackReadFilter] = useState<boolean | 'all'>('all');
@@ -92,17 +122,29 @@ function App() {
     isRead: boolean | 'all'
   ) => {
     setAdminLoading(true);
-    const [{ data: summary, error: summaryError }, { data: feedbackData, error: feedbackError }] = await Promise.all([
+    const fullFeedbackPromise = listFeedbackMessages();
+    const filteredFeedbackPromise = status === 'all' && isRead === 'all'
+      ? fullFeedbackPromise
+      : listFeedbackMessages({ status, isRead });
+
+    const [
+      { data: summary, error: summaryError },
+      { data: fullFeedbackData, error: fullFeedbackError },
+      { data: filteredFeedbackData, error: filteredFeedbackError },
+    ] = await Promise.all([
       getAdminDashboardSummary(),
-      listFeedbackMessages({ status, isRead }),
+      fullFeedbackPromise,
+      filteredFeedbackPromise,
     ]);
 
-    if (summaryError || feedbackError) {
-      setAdminError(summaryError?.message || feedbackError?.message || '加载后台数据失败');
+    if (summaryError || fullFeedbackError || filteredFeedbackError) {
+      setAdminError(summaryError?.message || fullFeedbackError?.message || filteredFeedbackError?.message || '加载后台数据失败');
     } else {
       setAdminError('');
-      setAdminSummary(summary);
-      setFeedbackList(feedbackData || []);
+      const nextAllFeedback = fullFeedbackData || [];
+      setAdminSummary(mergeAdminSummaryWithFeedback(summary, nextAllFeedback));
+      setAllFeedbackList(nextAllFeedback);
+      setFeedbackList(filteredFeedbackData || []);
     }
 
     setAdminLoading(false);
@@ -392,44 +434,56 @@ function App() {
     const { error } = await updateFeedbackMessage(feedbackId, status, adminNote);
     if (error) {
       toast.error(error.message || '更新建议失败');
-      return;
+      return false;
     }
 
     toast.success('建议状态已更新');
     await loadAdminDashboard(feedbackFilter, feedbackReadFilter);
+    return true;
   };
 
   const handleAdminMarkRead = async (feedbackIds: number[], isRead: boolean) => {
+    if (!feedbackIds.length) {
+      return false;
+    }
+
     const { error, data } = await markFeedbackRead(feedbackIds, isRead);
     if (error) {
       toast.error(error.message || (isRead ? '标记已读失败' : '标记未读失败'));
-      return;
+      return false;
     }
 
     toast.success(`已更新 ${data ?? feedbackIds.length} 条建议`);
     await loadAdminDashboard(feedbackFilter, feedbackReadFilter);
+    return true;
   };
 
   const handleAdminDeleteFeedback = async (feedbackId: number) => {
     const { error } = await deleteFeedbackMessage(feedbackId);
     if (error) {
       toast.error(error.message || '删除建议失败');
-      return;
+      return false;
     }
 
     toast.success('建议已删除');
     await loadAdminDashboard(feedbackFilter, feedbackReadFilter);
+    return true;
   };
 
   const handleAdminBatchDeleteFeedback = async (feedbackIds: number[]) => {
+    if (!feedbackIds.length) {
+      return false;
+    }
+
     const { error, data } = await batchDeleteFeedbackMessages(feedbackIds);
     if (error) {
       toast.error(error.message || '批量删除失败');
-      return;
+      return false;
     }
 
     toast.success(`已删除 ${data ?? feedbackIds.length} 条建议`);
     await loadAdminDashboard(feedbackFilter, feedbackReadFilter);
+    return true;
   };
 
   // 渲染当前视图

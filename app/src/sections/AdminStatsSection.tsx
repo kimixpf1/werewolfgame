@@ -75,6 +75,10 @@ export function AdminStatsSection({
   onRefresh,
   onOpenFeedback,
 }: AdminStatsSectionProps) {
+  const unresolvedFeedback = summary?.pending_feedback ?? 0;
+  const processingFeedback = summary?.processing_feedback ?? 0;
+  const newFeedback = Math.max(unresolvedFeedback - processingFeedback, 0);
+
   const trendChartData = useMemo(
     () =>
       (summary?.trend ?? []).map((item) => ({
@@ -97,11 +101,11 @@ export function AdminStatsSection({
 
   const workflowChartData = useMemo(
     () => [
-      { name: '待处理', value: summary?.pending_feedback ?? 0, color: '#f59e0b' },
-      { name: '处理中', value: summary?.processing_feedback ?? 0, color: '#38bdf8' },
+      { name: '待处理', value: newFeedback, color: '#f59e0b' },
+      { name: '处理中', value: processingFeedback, color: '#38bdf8' },
       { name: '已完结', value: summary?.resolved_feedback ?? 0, color: '#10b981' },
     ],
-    [summary]
+    [newFeedback, processingFeedback, summary]
   );
 
   return (
@@ -189,7 +193,7 @@ export function AdminStatsSection({
           <MetricCard
             title="建议总量"
             value={summary?.total_feedback ?? 0}
-            caption={`未读 ${summary?.unread_feedback ?? 0} / 待处理 ${summary?.pending_feedback ?? 0}`}
+            caption={`未读 ${summary?.unread_feedback ?? 0} / 未完结 ${unresolvedFeedback}`}
             icon={<MessageSquareText className="w-5 h-5" />}
           />
         </div>

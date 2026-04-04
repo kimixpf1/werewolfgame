@@ -26,10 +26,10 @@ interface AdminFeedbackSectionProps {
   onOpenStats: () => void;
   onChangeFilter: (status: FeedbackStatus | 'all') => void;
   onChangeReadFilter: (readState: boolean | 'all') => void;
-  onUpdateFeedback: (feedbackId: number, status: FeedbackStatus, adminNote: string) => void;
-  onMarkRead: (feedbackIds: number[], isRead: boolean) => void;
-  onDeleteFeedback: (feedbackId: number) => void;
-  onBatchDeleteFeedback: (feedbackIds: number[]) => void;
+  onUpdateFeedback: (feedbackId: number, status: FeedbackStatus, adminNote: string) => Promise<boolean>;
+  onMarkRead: (feedbackIds: number[], isRead: boolean) => Promise<boolean>;
+  onDeleteFeedback: (feedbackId: number) => Promise<boolean>;
+  onBatchDeleteFeedback: (feedbackIds: number[]) => Promise<boolean>;
 }
 
 const STATUS_OPTIONS: Array<{ value: FeedbackStatus | 'all'; label: string }> = [
@@ -75,9 +75,9 @@ function FeedbackItem({
   item: FeedbackMessage;
   selected: boolean;
   onToggleSelect: (feedbackId: number) => void;
-  onUpdate: (feedbackId: number, status: FeedbackStatus, adminNote: string) => void;
-  onMarkRead: (feedbackIds: number[], isRead: boolean) => void;
-  onDelete: (feedbackId: number) => void;
+  onUpdate: (feedbackId: number, status: FeedbackStatus, adminNote: string) => Promise<boolean>;
+  onMarkRead: (feedbackIds: number[], isRead: boolean) => Promise<boolean>;
+  onDelete: (feedbackId: number) => Promise<boolean>;
 }) {
   const [status, setStatus] = useState<FeedbackStatus>(item.status);
   const [note, setNote] = useState(item.admin_note ?? '');
@@ -138,21 +138,25 @@ function FeedbackItem({
 
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => onUpdate(item.id, status, note)}
+            onClick={async () => {
+              await onUpdate(item.id, status, note);
+            }}
             className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white transition-colors"
           >
             保存
           </button>
           <button
-            onClick={() => onMarkRead([item.id], !item.is_read)}
+            onClick={async () => {
+              await onMarkRead([item.id], !item.is_read);
+            }}
             className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
           >
             {item.is_read ? '标未读' : '标已读'}
           </button>
           <button
-            onClick={() => {
+            onClick={async () => {
               if (window.confirm('确认删除这条建议吗？删除后无法恢复。')) {
-                onDelete(item.id);
+                await onDelete(item.id);
               }
             }}
             className="px-4 py-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/20 transition-colors"
@@ -278,7 +282,12 @@ export function AdminFeedbackSection({
             </div>
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => onMarkRead(selectedIds, true)}
+                onClick={async () => {
+                  const ok = await onMarkRead(selectedIds, true);
+                  if (ok) {
+                    setSelectedIds([]);
+                  }
+                }}
                 disabled={!selectedCount}
                 className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-200 border border-slate-700 transition-colors flex items-center gap-2"
               >
@@ -286,7 +295,12 @@ export function AdminFeedbackSection({
                 批量已读
               </button>
               <button
-                onClick={() => onMarkRead(selectedIds, false)}
+                onClick={async () => {
+                  const ok = await onMarkRead(selectedIds, false);
+                  if (ok) {
+                    setSelectedIds([]);
+                  }
+                }}
                 disabled={!selectedCount}
                 className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-200 border border-slate-700 transition-colors flex items-center gap-2"
               >
@@ -294,10 +308,13 @@ export function AdminFeedbackSection({
                 批量未读
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (!selectedCount) return;
                   if (window.confirm(`确认删除选中的 ${selectedCount} 条建议吗？删除后无法恢复。`)) {
-                    onBatchDeleteFeedback(selectedIds);
+                    const ok = await onBatchDeleteFeedback(selectedIds);
+                    if (ok) {
+                      setSelectedIds([]);
+                    }
                   }
                 }}
                 disabled={!selectedCount}
