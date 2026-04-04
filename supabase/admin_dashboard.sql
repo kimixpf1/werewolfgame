@@ -381,7 +381,7 @@ grant execute on function public.admin_update_feedback(bigint, text, text) to au
 insert into public.admin_users (user_id, email, role)
 select id, email, 'admin'
 from auth.users
-where email in ('xpf@local.com', 'admin@local.com')
+where email in ('xpf@office.local', 'admin@office.local')
 on conflict (user_id) do update
 set email = excluded.email,
     role = excluded.role;

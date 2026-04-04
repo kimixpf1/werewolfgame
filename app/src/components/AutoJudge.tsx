@@ -42,6 +42,7 @@ interface AutoJudgeProps {
   roles: RoleType[];
   isHost: boolean;
   hostToken?: string | null;
+  enableSheriff?: boolean;
   currentPlayerId?: string;
   currentPlayerRole?: RoleType;
   onExit: () => void;
@@ -51,11 +52,10 @@ interface AutoJudgeProps {
 const useSpeech = () => {
   const [isReady, setIsReady] = useState(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const unlockedRef = useRef(false);
 
   useEffect(() => {
-    // 检查是否是微信浏览器
-    const isWechat = /MicroMessenger/i.test(navigator.userAgent);
-    
     if (typeof window !== 'undefined') {
       if (window.speechSynthesis) {
         synthRef.current = window.speechSynthesis;
@@ -70,60 +70,91 @@ const useSpeech = () => {
           synthRef.current.onvoiceschanged = loadVoices;
         }
       }
-      
-      // 微信浏览器使用备用方案
-      if (isWechat) {
-        setIsReady(true);
+
+      if ('AudioContext' in window || 'webkitAudioContext' in window) {
+        const ContextCtor = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+        audioContextRef.current = new ContextCtor();
       }
+
+      // 某些移动端环境即使 voices 延迟，也允许先尝试 speak。
+      setIsReady(true);
     }
+
+    const unlockAudio = () => {
+      if (unlockedRef.current) {
+        return;
+      }
+
+      unlockedRef.current = true;
+      void audioContextRef.current?.resume();
+
+      if (synthRef.current) {
+        try {
+          const warmup = new SpeechSynthesisUtterance(' ');
+          warmup.volume = 0;
+          synthRef.current.cancel();
+          synthRef.current.speak(warmup);
+        } catch (error) {
+          console.warn('Speech warmup failed:', error);
+        }
+      }
+    };
+
+    window.addEventListener('touchstart', unlockAudio, { once: true });
+    window.addEventListener('click', unlockAudio, { once: true });
+    document.addEventListener('WeixinJSBridgeReady', unlockAudio as EventListener, { once: true });
+
+    return () => {
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('click', unlockAudio);
+      document.removeEventListener('WeixinJSBridgeReady', unlockAudio as EventListener);
+      audioContextRef.current?.close().catch(() => undefined);
+    };
+  }, []);
+
+  const unlock = useCallback(() => {
+    if (unlockedRef.current) {
+      return;
+    }
+    unlockedRef.current = true;
+    void audioContextRef.current?.resume();
   }, []);
 
   const speak = useCallback((text: string, onEnd?: () => void) => {
-    const isWechat = /MicroMessenger/i.test(navigator.userAgent);
-    
-    // 微信浏览器：使用震动提示+文字
-    if (isWechat) {
+    if (!synthRef.current) {
       if (navigator.vibrate) {
         navigator.vibrate([100, 50, 100]);
       }
-      // 延迟后回调，让用户看到文字提示
-      setTimeout(() => {
-        onEnd?.();
-      }, 2000);
-      return;
-    }
-    
-    // 普通浏览器：使用语音合成
-    if (!synthRef.current) {
       onEnd?.();
       return;
     }
-    
-    // 取消之前的语音
+
     synthRef.current.cancel();
-    
-    // 创建新的语音
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'zh-CN';
     utterance.rate = 0.9;
     utterance.pitch = 1;
     utterance.volume = 1;
-    
-    // 尝试使用中文语音
+
     const voices = synthRef.current.getVoices();
     const zhVoice = voices.find(v => v.lang.includes('zh') || v.lang.includes('CN'));
     if (zhVoice) {
       utterance.voice = zhVoice;
     }
-    
+
     utterance.onend = () => {
       onEnd?.();
     };
-    
-    utterance.onerror = () => {
+
+    utterance.onerror = (error) => {
+      console.warn('Speech synthesis failed, fallback to vibration:', error);
+      if (navigator.vibrate) {
+        navigator.vibrate([100, 50, 100]);
+      }
       onEnd?.();
     };
-    
+
     synthRef.current.speak(utterance);
   }, []);
 
@@ -131,7 +162,7 @@ const useSpeech = () => {
     synthRef.current?.cancel();
   }, []);
 
-  return { speak, stop, isReady };
+  return { speak, stop, isReady, unlock };
 };
 
 export function AutoJudge({ 
@@ -140,6 +171,7 @@ export function AutoJudge({
   roles, 
   isHost, 
   hostToken,
+  enableSheriff = true,
   currentPlayerId,
   currentPlayerRole,
   onExit 
@@ -161,9 +193,14 @@ export function AutoJudge({
   const [showMyAction, setShowMyAction] = useState(false);
   const [actionResult, setActionResult] = useState<string>('');
   
-  const { speak } = useSpeech();
+  const waitingForActionRef = useRef(false);
+  const { speak, unlock } = useSpeech();
   const alivePlayers = players.filter(p => !p.is_host && p.is_alive);
   const isWechat = /MicroMessenger/i.test(navigator.userAgent);
+
+  useEffect(() => {
+    waitingForActionRef.current = waitingForAction;
+  }, [waitingForAction]);
   
   // 判断是否有某个角色
   const hasRole = useCallback((role: RoleType) => {
@@ -440,6 +477,7 @@ export function AutoJudge({
   
   // 开始夜晚
   const startNight = async () => {
+    unlock();
     setGameState('night');
     setCurrentPhase('start');
     setNightActions([]);
@@ -501,7 +539,7 @@ export function AutoJudge({
       // 等待操作完成
       await new Promise<void>((resolve) => {
         const checkInterval = setInterval(() => {
-          if (!waitingForAction) {
+          if (!waitingForActionRef.current) {
             clearInterval(checkInterval);
             resolve();
           }
@@ -579,7 +617,8 @@ export function AutoJudge({
   // 结束夜晚
   const endNight = async () => {
     setGameState('day');
-    setCurrentPhase('day_start');
+    const nextDayPhase = enableSheriff && currentRound === 1 ? 'sheriff_campaign' : 'day_start';
+    setCurrentPhase(nextDayPhase);
     setShowDeathInfo(false);
     
     // 计算死亡信息
@@ -620,14 +659,16 @@ export function AutoJudge({
     }
     
     setDeathInfo(deaths);
-    await syncGameState('day', 'day_start', nightActions);
+    await syncGameState('day', nextDayPhase, nightActions);
     
     // 播报天亮
     if (voiceEnabled) {
       setIsSpeaking(true);
-      const deathText = deaths.length > 0 
-        ? `天亮了，昨晚死亡的是${deaths.map(d => d.playerName).join('、')}` 
-        : '天亮了，昨晚是平安夜';
+      const deathText = enableSheriff && currentRound === 1
+        ? '天亮了，请先进行警长竞选。竞选结束后再公布昨夜情况。'
+        : deaths.length > 0
+          ? `天亮了，昨晚死亡的是${deaths.map(d => d.playerName).join('、')}`
+          : '天亮了，昨晚是平安夜';
       speak(deathText, () => {
         setIsSpeaking(false);
       });
@@ -1037,6 +1078,8 @@ export function AutoJudge({
   
   // 渲染白天界面（房主）
   if (gameState === 'day' && isHost) {
+    const isSheriffCampaign = currentPhase === 'sheriff_campaign';
+
     return (
       <div className="min-h-dvh bg-slate-900 text-white p-4">
         <div className="max-w-md mx-auto">
@@ -1047,6 +1090,33 @@ export function AutoJudge({
             </div>
           </div>
           
+          {isSheriffCampaign && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
+              <h2 className="text-lg font-bold mb-2 flex items-center gap-2">
+                <Crown className="w-5 h-5 text-amber-400" />
+                警长竞选
+              </h2>
+              <p className="text-slate-300 text-sm leading-6 mb-4">
+                按你的桌游流程，第一天白天先进行警长竞选。竞选和警徽处理结束后，再公布昨夜情况；如有人死亡，再进入遗言环节。
+              </p>
+              <button
+                onClick={async () => {
+                  setCurrentPhase('day_start');
+                  await syncGameState('day', 'day_start', nightActions);
+                  if (voiceEnabled) {
+                    const deathText = deathInfo.length > 0
+                      ? `警长竞选结束。昨晚死亡的是${deathInfo.map(d => d.playerName).join('、')}`
+                      : '警长竞选结束，昨晚是平安夜';
+                    speak(deathText);
+                  }
+                }}
+                className="w-full py-3 bg-amber-600 hover:bg-amber-700 rounded-xl font-medium"
+              >
+                警长竞选结束，公布昨夜情况
+              </button>
+            </div>
+          )}
+
           {/* 昨夜信息 */}
           <div className="bg-slate-800 rounded-xl p-4 mb-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
@@ -1054,12 +1124,16 @@ export function AutoJudge({
               昨夜信息
               {!showDeathInfo && (
                 <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded ml-auto">
-                  待查看
+                  {isSheriffCampaign ? '竞选后公布' : '待查看'}
                 </span>
               )}
             </h2>
             
-            {showDeathInfo ? (
+            {isSheriffCampaign ? (
+              <div className="rounded-xl bg-slate-700/50 p-4 text-sm text-slate-400">
+                当前处于警长竞选阶段，结束后再公布昨夜死亡与遗言信息。
+              </div>
+            ) : showDeathInfo ? (
               <div>
                 {deathInfo.length > 0 ? (
                   <div className="space-y-2">
@@ -1143,13 +1217,16 @@ export function AutoJudge({
   
   // 渲染白天界面（普通玩家）
   if (gameState === 'day' && !isHost) {
+    const isSheriffCampaign = currentPhase === 'sheriff_campaign';
     return (
       <div className="min-h-dvh bg-slate-900 text-white p-4 flex items-center justify-center">
         <div className="text-center">
           <Sun className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
           <h2 className="text-2xl font-bold mb-2">第{currentRound}天</h2>
           <p className="text-slate-400">天亮了</p>
-          <p className="text-green-400 mt-4">请等待法官宣布昨夜信息</p>
+          <p className="text-green-400 mt-4">
+            {isSheriffCampaign ? '请先等待警长竞选结束' : '请等待法官宣布昨夜信息'}
+          </p>
         </div>
       </div>
     );
