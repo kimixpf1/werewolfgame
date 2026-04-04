@@ -609,8 +609,16 @@ export async function signInAdmin(
   password: string
 ): Promise<{ data: AdminProfile | null; error: any }> {
   try {
+    const rawLogin = email.trim().toLowerCase();
+    const normalizedEmail =
+      rawLogin.includes('@')
+        ? rawLogin
+        : rawLogin === 'xpf' || rawLogin === 'admin'
+          ? `${rawLogin}@office.local`
+          : rawLogin;
+
     const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+      email: normalizedEmail,
       password,
     });
 
