@@ -60,45 +60,34 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
   const [selectedRole, setSelectedRole] = useState<RoleType | null>(null);
   const [revealedRoles, setRevealedRoles] = useState<Set<string>>(new Set());
   
-  // 法官记录
   const [nightActions, setNightActions] = useState<NightAction[]>([]);
   const [dayVotes, setDayVotes] = useState<DayVote[]>([]);
   const [currentRound, setCurrentRound] = useState(1);
   
-  // 玩家个人记录
   const [playerNotes, setPlayerNotes] = useState<PlayerNote[]>([]);
   const [newNoteTarget, setNewNoteTarget] = useState('');
   const [newNoteContent, setNewNoteContent] = useState('');
   const [newNotePhase, setNewNotePhase] = useState<'night' | 'day'>('day');
   
-  // 游戏结果
   const [gameResult, setGameResult] = useState<{ winner: 'good' | 'evil'; reason: string } | null>(null);
 
-  // 警长
   const [sheriffId, setSheriffId] = useState<string | null>(room.sheriff_id || null);
   const [sheriffTorn, setSheriffTorn] = useState(room.sheriff_torn || false);
 
-  // 修改名字相关
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
-  // 退出确认弹窗
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
 
-  // 电子法官
   const [showAutoJudge, setShowAutoJudge] = useState(false);
   
-  // 房间配置（从 localStorage 获取）
   const [roomConfig] = useState(() => getRoomConfig(room.id));
 
-  // 获取当前玩家的角色（法官不显示角色）
   const myPlayer = players.find(p => p.id === localPlayer.playerId);
   const myRole = myPlayer?.is_host ? null : myPlayer?.role;
   
-  // 判断是否是房主（电子法官模式下，host_id对应的玩家也是房主）
   const isRoomHost = (localPlayer as any).isHost || localPlayer.playerId === room.host_id;
 
-  // 加载玩家列表
   const loadRoomSnapshot = useCallback(async () => {
     const { data } = await getRoomSnapshot(room.id, localPlayer);
     if (data) {
@@ -115,7 +104,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     }
   }, [localPlayer, room.id]);
 
-  // 订阅房间和玩家变化
   useEffect(() => {
     loadRoomSnapshot();
     
@@ -145,14 +133,12 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     };
   }, [localPlayer]);
 
-  // 复制房间号
   const copyRoomInfo = () => {
     navigator.clipboard.writeText(room.id);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // 添加玩家
   const handleAddPlayer = async () => {
     if (!newPlayerName.trim() || !isRoomHost) return;
     if (!localPlayer.hostToken) return;
@@ -165,9 +151,7 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     loadRoomSnapshot();
   };
 
-  // 发牌
   const handleDealCards = async () => {
-    // 过滤掉法官，只给普通玩家发牌
     const gamePlayers = players.filter(p => !p.is_host);
     if (!isRoomHost || gamePlayers.length !== room.player_count) return;
     if (!localPlayer.hostToken) return;
@@ -183,7 +167,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     await batchUpdatePlayerRoles(room.id, localPlayer.hostToken, updates);
     await updateRoomStatus(room.id, localPlayer.hostToken, 'playing');
     
-    // 保存游戏记录
     const record = {
       id: `game_${Date.now()}`,
       roomId: room.id,
@@ -198,14 +181,12 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     setLoading(false);
   };
 
-  // 重新开始
   const handleRestart = async () => {
     if (!isRoomHost) return;
     if (!localPlayer.hostToken) return;
     
     setLoading(true);
     
-    // 只重置普通玩家（不含法官）
     const gamePlayers = players.filter(p => !p.is_host);
     for (const player of gamePlayers) {
       await updatePlayerRole(room.id, localPlayer.hostToken, player.id, '');
@@ -228,20 +209,16 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     setLoading(false);
   };
 
-  // 切换玩家存活状态
   const togglePlayerAlive = async (playerId: string, currentStatus: boolean) => {
     if (!isRoomHost) return;
     if (!localPlayer.hostToken) return;
     await updatePlayerAlive(room.id, localPlayer.hostToken, playerId, !currentStatus);
     
-    // 如果警长出局，提示传递警徽
     const player = players.find(p => p.id === playerId);
     if (playerId === sheriffId && player?.is_alive) {
-      // 警长即将出局
     }
   };
 
-  // 传递警徽
   const handleTransferSheriff = async (newSheriffId: string | null) => {
     if (!isRoomHost) return;
     if (!localPlayer.hostToken) return;
@@ -249,7 +226,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     setSheriffId(newSheriffId);
   };
 
-  // 撕毁警徽
   const handleTearSheriff = async () => {
     if (!isRoomHost) return;
     if (!localPlayer.hostToken) return;
@@ -258,17 +234,14 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     setSheriffId(null);
   };
 
-  // 开始编辑玩家名字
   const startEditingName = (player: Player) => {
     setEditingPlayerId(player.id);
     setEditingName(player.name);
   };
 
-  // 保存玩家名字修改
   const savePlayerName = async () => {
     if (!editingPlayerId || !editingName.trim()) return;
     
-    // 只能修改自己的名字，或者法官可以修改任何人的名字
     const targetPlayer = players.find(p => p.id === editingPlayerId);
     if (!targetPlayer) return;
     
@@ -281,19 +254,17 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     loadRoomSnapshot();
   };
 
-  // 取消编辑名字
   const cancelEditingName = () => {
     setEditingPlayerId(null);
     setEditingName('');
   };
 
-  // 法官踢出玩家
   const handleKickPlayer = async (playerId: string) => {
     if (!isRoomHost) return;
     if (!localPlayer.hostToken) return;
     
     const player = players.find(p => p.id === playerId);
-    if (!player || player.is_host) return; // 不能踢出法官
+    if (!player || player.is_host) return;
     
     if (!confirm(`确定要将 ${player.name} 踢出房间吗？`)) return;
     
@@ -301,41 +272,34 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     loadRoomSnapshot();
   };
 
-  // 处理退出房间
   const handleLeaveClick = () => {
     setShowLeaveConfirm(true);
   };
 
-  // 确认退出
   const confirmLeave = () => {
     setShowLeaveConfirm(false);
     onLeave();
   };
 
-  // 取消退出
   const cancelLeave = () => {
     setShowLeaveConfirm(false);
   };
 
-  // 添加夜晚记录
   const handleAddNightAction = (action: NightAction) => {
     setNightActions(prev => [...prev.filter(a => a.round !== action.round), action]);
   };
 
-  // 添加白天记录
   const handleAddDayVote = (vote: DayVote) => {
     setDayVotes(prev => [...prev.filter(v => v.round !== vote.round), vote]);
     setCurrentRound(vote.round + 1);
   };
   
-  // 处理玩家死亡（从法官记录触发）
   const handlePlayerDie = async (playerId: string) => {
     if (!localPlayer.hostToken) return;
     await updatePlayerAlive(room.id, localPlayer.hostToken, playerId, false);
     loadRoomSnapshot();
   };
   
-  // 处理游戏结束
   const handleGameEnd = async (winner: 'good' | 'evil', reason: string) => {
     if (!localPlayer.hostToken) return;
     const result = { winner, reason };
@@ -351,7 +315,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     });
   };
   
-  // 添加玩家个人记录
   const handleAddPlayerNote = () => {
     if (!newNoteTarget.trim() || !newNoteContent.trim()) return;
     
@@ -368,12 +331,10 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     setNewNoteContent('');
   };
   
-  // 删除玩家记录
   const handleDeleteNote = (noteId: string) => {
     setPlayerNotes(prev => prev.filter(n => n.id !== noteId));
   };
 
-  // 渲染法官流程
   const renderModeratorFlow = () => {
     return (
       <div className="space-y-4">
@@ -426,7 +387,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
           </div>
         </div>
 
-        {/* 当前步骤 */}
         <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-xl p-4">
           <p className="text-purple-400 text-sm font-medium mb-1">当前步骤</p>
           <div className="flex items-center gap-2">
@@ -438,7 +398,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
           <p className="text-slate-400 text-sm mt-1">{MODERATOR_FLOW[currentTipIndex]?.content}</p>
         </div>
 
-        {/* 步骤控制 */}
         <div className="flex gap-2">
           <button
             onClick={() => setCurrentTipIndex(Math.max(0, currentTipIndex - 1))}
@@ -459,7 +418,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     );
   };
 
-  // 渲染角色提示
   const renderRoleTips = () => {
     if (!myRole) return null;
     const roleInfo = ROLES[myRole as RoleType];
@@ -467,14 +425,12 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
     
     return (
       <div className="space-y-4">
-        {/* 角色卡片 */}
         <div className="flex justify-center">
           <div onClick={() => setSelectedRole(myRole as RoleType)}>
             <RoleCard role={myRole as RoleType} size="large" revealed={true} />
           </div>
         </div>
 
-        {/* 角色提示 */}
         <div className="bg-slate-800/50 rounded-xl p-4">
           <h3 className="text-slate-300 font-medium mb-4 flex items-center gap-2">
             <Scroll className="w-5 h-5" />
@@ -492,7 +448,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
           </div>
         </div>
 
-        {/* 阵营信息 */}
         <div className={`rounded-xl p-4 ${
           team === 'good' 
             ? 'bg-blue-500/10 border border-blue-500/30' 
@@ -518,7 +473,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
 
   return (
     <div className="min-h-dvh bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* 头部 */}
       <div className="flex items-center justify-between p-4 border-b border-slate-800">
         <div className="flex items-center gap-4">
           <button 
@@ -556,7 +510,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         </div>
       </div>
 
-      {/* 房间信息卡片 */}
       {isRoomHost && (
         <div className="mx-4 mt-4 bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-xl p-4">
           <div>
@@ -567,7 +520,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         </div>
       )}
 
-      {/* 游戏配置信息 */}
       <div className="mx-4 mt-4 flex gap-2">
         <div className="flex-1 bg-slate-800/50 rounded-xl p-3 text-center">
           <p className="text-slate-500 text-xs">模式</p>
@@ -587,7 +539,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         </div>
       </div>
 
-      {/* 警长信息 */}
       {room.status === 'playing' && (
         <div className="mx-4 mt-4">
           <SheriffBadge
@@ -601,7 +552,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         </div>
       )}
 
-      {/* 我的角色卡片 */}
       {room.status === 'playing' && myRole && (
         <div className="mx-4 mt-4">
           <div className="bg-slate-800/50 rounded-xl p-4">
@@ -609,7 +559,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
             <div className="flex justify-center">
               <div 
                 onClick={() => {
-                  // 点击卡片切换显示/隐藏
                   const newRevealed = new Set(revealedRoles);
                   if (newRevealed.has(localPlayer.playerId)) {
                     newRevealed.delete(localPlayer.playerId);
@@ -645,7 +594,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         </div>
       )}
 
-      {/* Tab 切换 */}
       <div className="mx-4 mt-4 flex gap-2 overflow-x-auto pb-2">
         <button
           onClick={() => setActiveTab('players')}
@@ -705,18 +653,15 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         )}
       </div>
 
-      {/* 内容区域 */}
       <div className="p-4 pb-32">
         {activeTab === 'players' && (
           <div className="space-y-4">
-            {/* 玩家列表 */}
             <div className="bg-slate-800/50 rounded-xl p-4">
               <h3 className="text-slate-300 font-medium mb-4 flex items-center gap-2">
                 <Users className="w-5 h-5" />
                 玩家列表
               </h3>
               
-              {/* 法官区域 */}
               {players.filter(p => p.is_host).map((player) => (
                 <div
                   key={player.id}
@@ -735,7 +680,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
                 </div>
               ))}
               
-              {/* 普通玩家区域 */}
               <div className="mt-4">
                 <p className="text-slate-500 text-xs mb-2">
                   游戏玩家 ({players.filter(p => !p.is_host).length}/{room.player_count})
@@ -751,7 +695,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
                       <div className="flex items-center gap-2 flex-1 min-w-0">
                         {player.id === sheriffId && <Crown className="w-4 h-4 text-yellow-400 flex-shrink-0" />}
                         
-                        {/* 名字显示或编辑 */}
                         {editingPlayerId === player.id ? (
                           <div className="flex items-center gap-2 flex-1">
                             <input
@@ -792,14 +735,12 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
                       </div>
                       
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        {/* 角色显示（法官可见） */}
                         {player.role && isRoomHost && (
                           <span className={`text-sm font-medium ${getRoleColor(player.role as RoleType)} mr-2`}>
                             {ROLES[player.role as RoleType].icon} {getRoleName(player.role as RoleType)}
                           </span>
                         )}
                         
-                        {/* 修改名字按钮（自己或法官） */}
                         {editingPlayerId !== player.id && (isRoomHost || player.id === localPlayer.playerId) && (
                           <button
                             onClick={() => startEditingName(player)}
@@ -810,7 +751,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
                           </button>
                         )}
                         
-                        {/* 存活状态切换（法官） */}
                         {isRoomHost && room.status === 'playing' && (
                           <button
                             onClick={() => togglePlayerAlive(player.id, player.is_alive)}
@@ -825,7 +765,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
                           </button>
                         )}
                         
-                        {/* 踢出玩家按钮（法官，等待阶段） */}
                         {isRoomHost && room.status === 'waiting' && (
                           <button
                             onClick={() => handleKickPlayer(player.id)}
@@ -845,7 +784,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
                 </div>
               </div>
 
-              {/* 法官添加玩家 */}
               {isRoomHost && room.status === 'waiting' && players.filter(p => !p.is_host).length < room.player_count && (
                 <div className="mt-4 flex gap-2">
                   <input
@@ -867,7 +805,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
               )}
             </div>
 
-            {/* 角色配置预览 */}
             {isRoomHost && room.status === 'waiting' && (
               <div className="bg-slate-800/30 rounded-xl p-4">
                 <h3 className="text-slate-400 text-sm mb-3">角色配置</h3>
@@ -916,7 +853,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         
         {activeTab === 'notes' && room.status === 'playing' && (
           <div className="space-y-4">
-            {/* 添加记录 */}
             <div className="bg-slate-800/50 rounded-xl p-4">
               <h3 className="text-slate-300 font-medium mb-4 flex items-center gap-2">
                 <Scroll className="w-5 h-5" />
@@ -961,7 +897,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
               </div>
             </div>
             
-            {/* 记录列表 */}
             <div className="bg-slate-800/50 rounded-xl p-4">
               <h3 className="text-slate-300 font-medium mb-4 flex items-center gap-2">
                 <Scroll className="w-5 h-5" />
@@ -1002,12 +937,10 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         )}
       </div>
 
-      {/* 底部控制面板 */}
       {isRoomHost && (
         <div className="fixed bottom-0 left-0 right-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-slate-900 via-slate-900 to-transparent">
           {room.status === 'waiting' && (
             <div className="space-y-3">
-              {/* 电子法官入口 */}
               <button
                 onClick={() => setShowAutoJudge(true)}
                 disabled={players.filter(p => !p.is_host).length !== room.player_count}
@@ -1043,7 +976,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         </div>
       )}
 
-      {/* 非法官等待提示 */}
       {!isRoomHost && room.status === 'waiting' && (
         <div className="fixed bottom-0 left-0 right-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-slate-900 via-slate-900 to-transparent">
           <div className="text-center text-slate-400 py-4 bg-slate-800/50 rounded-xl">
@@ -1053,7 +985,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         </div>
       )}
 
-      {/* 游戏结果弹窗 */}
       {gameResult && room.status === 'ended' && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className={`rounded-2xl p-6 max-w-sm w-full border-2 ${
@@ -1083,7 +1014,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         </div>
       )}
 
-      {/* 角色详情弹窗 */}
       {selectedRole && (
         <RoleDetailModal
           role={selectedRole}
@@ -1092,7 +1022,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         />
       )}
 
-      {/* 退出确认弹窗 */}
       {showLeaveConfirm && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 rounded-2xl p-6 max-w-sm w-full border-2 border-purple-500/50">
@@ -1126,7 +1055,6 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
         </div>
       )}
 
-      {/* 电子法官 */}
       {showAutoJudge && (
         <div className="fixed inset-0 z-50">
           <AutoJudge
