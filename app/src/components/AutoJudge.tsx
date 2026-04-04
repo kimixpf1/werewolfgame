@@ -42,6 +42,7 @@ interface AutoJudgeProps {
   roles: RoleType[];
   isHost: boolean;
   hostToken?: string | null;
+  enableSheriff?: boolean;
   currentPlayerId?: string;
   currentPlayerRole?: RoleType;
   onExit: () => void;
@@ -170,6 +171,7 @@ export function AutoJudge({
   roles, 
   isHost, 
   hostToken,
+  enableSheriff = true,
   currentPlayerId,
   currentPlayerRole,
   onExit 
@@ -192,9 +194,8 @@ export function AutoJudge({
   const [actionResult, setActionResult] = useState<string>('');
   
   const waitingForActionRef = useRef(false);
-  const { speak, unlock } = useSpeech();
+  const { speak, unlock, isReady } = useSpeech();
   const alivePlayers = players.filter(p => !p.is_host && p.is_alive);
-  const isWechat = /MicroMessenger/i.test(navigator.userAgent);
 
   useEffect(() => {
     waitingForActionRef.current = waitingForAction;
@@ -615,7 +616,8 @@ export function AutoJudge({
   // 结束夜晚
   const endNight = async () => {
     setGameState('day');
-    setCurrentPhase('day_start');
+    const nextDayPhase = enableSheriff && currentRound === 1 ? 'sheriff_campaign' : 'day_start';
+    setCurrentPhase(nextDayPhase);
     setShowDeathInfo(false);
     
     // 计算死亡信息
@@ -656,14 +658,16 @@ export function AutoJudge({
     }
     
     setDeathInfo(deaths);
-    await syncGameState('day', 'day_start', nightActions);
+    await syncGameState('day', nextDayPhase, nightActions);
     
     // 播报天亮
     if (voiceEnabled) {
       setIsSpeaking(true);
-      const deathText = deaths.length > 0 
-        ? `天亮了，昨晚死亡的是${deaths.map(d => d.playerName).join('、')}` 
-        : '天亮了，昨晚是平安夜';
+      const deathText = enableSheriff && currentRound === 1
+        ? '天亮了，请先进行警长竞选。竞选结束后再公布昨夜情况。'
+        : deaths.length > 0
+          ? `天亮了，昨晚死亡的是${deaths.map(d => d.playerName).join('、')}`
+          : '天亮了，昨晚是平安夜';
       speak(deathText, () => {
         setIsSpeaking(false);
       });
@@ -673,6 +677,17 @@ export function AutoJudge({
   // 获取当前环节信息
   const currentPhaseInfo = getNightPhases().find(p => p.id === currentPhase);
   const isMyTurn = currentPlayerRole === currentPhaseInfo?.role;
+
+  const testVoicePlayback = () => {
+    unlock();
+    if (!voiceEnabled) {
+      setVoiceEnabled(true);
+    }
+    setIsSpeaking(true);
+    speak('电子法官语音已解锁，现在可以开始主持流程。', () => {
+      setIsSpeaking(false);
+    });
+  };
   
   // 渲染等待界面（房主）
   if (gameState === 'waiting' && isHost) {
@@ -702,17 +717,14 @@ export function AutoJudge({
             </ul>
           </div>
           
-          {isWechat && (
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-6">
-              <p className="text-yellow-400 text-sm">
-                💡 微信浏览器使用文字提示+震动代替语音播报
-              </p>
-            </div>
-          )}
-          
           <div className="bg-slate-800 rounded-xl p-4 mb-6">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-300">语音播报</span>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <span className="text-slate-300">语音播报</span>
+                <p className="text-slate-500 text-xs mt-1">
+                  {isReady ? '浏览器语音能力已就绪，建议先点一次测试播报。' : '正在等待浏览器加载语音能力...'}
+                </p>
+              </div>
               <button
                 onClick={() => setVoiceEnabled(!voiceEnabled)}
                 className={`p-2 rounded-lg transition-colors ${
@@ -720,6 +732,20 @@ export function AutoJudge({
                 }`}
               >
                 {voiceEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <button
+                onClick={testVoicePlayback}
+                className="py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium"
+              >
+                解锁并测试语音
+              </button>
+              <button
+                onClick={unlock}
+                className="py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium"
+              >
+                仅解锁音频
               </button>
             </div>
           </div>
@@ -1073,6 +1099,8 @@ export function AutoJudge({
   
   // 渲染白天界面（房主）
   if (gameState === 'day' && isHost) {
+    const isSheriffCampaign = currentPhase === 'sheriff_campaign';
+
     return (
       <div className="min-h-dvh bg-slate-900 text-white p-4">
         <div className="max-w-md mx-auto">
@@ -1083,6 +1111,33 @@ export function AutoJudge({
             </div>
           </div>
           
+          {isSheriffCampaign && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
+              <h2 className="text-lg font-bold mb-2 flex items-center gap-2">
+                <Crown className="w-5 h-5 text-amber-400" />
+                警长竞选
+              </h2>
+              <p className="text-slate-300 text-sm leading-6 mb-4">
+                按你的桌游流程，第一天白天先进行警长竞选。竞选和警徽处理结束后，再公布昨夜情况；如有人死亡，再进入遗言环节。
+              </p>
+              <button
+                onClick={async () => {
+                  setCurrentPhase('day_start');
+                  await syncGameState('day', 'day_start', nightActions);
+                  if (voiceEnabled) {
+                    const deathText = deathInfo.length > 0
+                      ? `警长竞选结束。昨晚死亡的是${deathInfo.map(d => d.playerName).join('、')}`
+                      : '警长竞选结束，昨晚是平安夜';
+                    speak(deathText);
+                  }
+                }}
+                className="w-full py-3 bg-amber-600 hover:bg-amber-700 rounded-xl font-medium"
+              >
+                警长竞选结束，公布昨夜情况
+              </button>
+            </div>
+          )}
+
           {/* 昨夜信息 */}
           <div className="bg-slate-800 rounded-xl p-4 mb-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
@@ -1090,12 +1145,16 @@ export function AutoJudge({
               昨夜信息
               {!showDeathInfo && (
                 <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded ml-auto">
-                  待查看
+                  {isSheriffCampaign ? '竞选后公布' : '待查看'}
                 </span>
               )}
             </h2>
             
-            {showDeathInfo ? (
+            {isSheriffCampaign ? (
+              <div className="rounded-xl bg-slate-700/50 p-4 text-sm text-slate-400">
+                当前处于警长竞选阶段，结束后再公布昨夜死亡与遗言信息。
+              </div>
+            ) : showDeathInfo ? (
               <div>
                 {deathInfo.length > 0 ? (
                   <div className="space-y-2">
@@ -1179,13 +1238,16 @@ export function AutoJudge({
   
   // 渲染白天界面（普通玩家）
   if (gameState === 'day' && !isHost) {
+    const isSheriffCampaign = currentPhase === 'sheriff_campaign';
     return (
       <div className="min-h-dvh bg-slate-900 text-white p-4 flex items-center justify-center">
         <div className="text-center">
           <Sun className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
           <h2 className="text-2xl font-bold mb-2">第{currentRound}天</h2>
           <p className="text-slate-400">天亮了</p>
-          <p className="text-green-400 mt-4">请等待法官宣布昨夜信息</p>
+          <p className="text-green-400 mt-4">
+            {isSheriffCampaign ? '请先等待警长竞选结束' : '请等待法官宣布昨夜信息'}
+          </p>
         </div>
       </div>
     );

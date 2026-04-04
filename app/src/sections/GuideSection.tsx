@@ -8,7 +8,7 @@ const GUIDE_STEPS = [
   {
     icon: Plus,
     title: '创建房间',
-    description: '点击"创建房间"，输入法官名字，选择玩家人数和角色配置。系统会根据人数自动推荐板子。',
+    description: '点击"创建房间"，输入法官名字，选择玩家人数和角色配置。系统支持 6-20 人自动推荐；如果当前模式没有独立预设，会自动使用同人数通用板。',
     color: 'text-purple-400',
     bgColor: 'bg-purple-500/10'
   },
@@ -53,7 +53,7 @@ const FEATURES = [
   },
   {
     title: '自动推荐板子',
-    description: '根据人数自动推荐平衡的角色配置'
+    description: '支持 6-20 人同人数推荐，少数模式会自动回退到同人数通用板'
   },
   {
     title: '法官记录面板',

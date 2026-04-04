@@ -46,8 +46,15 @@ create table if not exists public.feedback_messages (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+alter table public.feedback_messages
+  add column if not exists is_read boolean not null default false;
+
+alter table public.feedback_messages
+  add column if not exists read_at timestamptz;
+
 create index if not exists feedback_messages_status_idx on public.feedback_messages (status, created_at desc);
 create index if not exists feedback_messages_created_idx on public.feedback_messages (created_at desc);
+create index if not exists feedback_messages_read_idx on public.feedback_messages (is_read, created_at desc);
 
 drop trigger if exists feedback_messages_set_updated_at on public.feedback_messages;
 
@@ -247,10 +254,30 @@ begin
       where status = 'ended'
     ),
     'total_feedback', (select count(*) from public.feedback_messages),
+    'unread_feedback', (
+      select count(*)
+      from public.feedback_messages
+      where is_read = false
+    ),
+    'read_feedback', (
+      select count(*)
+      from public.feedback_messages
+      where is_read = true
+    ),
     'pending_feedback', (
       select count(*)
       from public.feedback_messages
       where status in ('new', 'processing')
+    ),
+    'processing_feedback', (
+      select count(*)
+      from public.feedback_messages
+      where status = 'processing'
+    ),
+    'resolved_feedback', (
+      select count(*)
+      from public.feedback_messages
+      where status in ('done', 'ignored')
     ),
     'total_join_events', (
       select count(*)
@@ -302,7 +329,8 @@ end;
 $$;
 
 create or replace function public.admin_list_feedback(
-  p_status text default null
+  p_status text default null,
+  p_is_read boolean default null
 )
 returns jsonb
 language plpgsql
@@ -321,7 +349,8 @@ begin
   return coalesce((
     select jsonb_agg(to_jsonb(f) order by f.created_at desc)
     from public.feedback_messages f
-    where p_status is null or f.status = p_status
+    where (p_status is null or f.status = p_status)
+      and (p_is_read is null or f.is_read = p_is_read)
   ), '[]'::jsonb);
 end;
 $$;
@@ -348,7 +377,9 @@ begin
 
   update public.feedback_messages
   set status = p_status,
-      admin_note = nullif(trim(coalesce(p_admin_note, '')), '')
+      admin_note = nullif(trim(coalesce(p_admin_note, '')), ''),
+      is_read = true,
+      read_at = coalesce(read_at, timezone('utc', now()))
   where id = p_feedback_id
   returning * into v_feedback;
 
@@ -357,6 +388,88 @@ begin
   end if;
 
   return to_jsonb(v_feedback);
+end;
+$$;
+
+create or replace function public.admin_batch_mark_feedback_read(
+  p_feedback_ids bigint[],
+  p_is_read boolean default true
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_admin public.admin_users;
+  v_count integer;
+begin
+  v_admin := public.app_require_admin();
+
+  if coalesce(array_length(p_feedback_ids, 1), 0) = 0 then
+    raise exception '请选择要处理的建议';
+  end if;
+
+  update public.feedback_messages
+  set is_read = p_is_read,
+      read_at = case
+        when p_is_read then coalesce(read_at, timezone('utc', now()))
+        else null
+      end
+  where id = any(p_feedback_ids);
+
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+create or replace function public.admin_delete_feedback(
+  p_feedback_id bigint
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_admin public.admin_users;
+begin
+  v_admin := public.app_require_admin();
+
+  delete from public.feedback_messages
+  where id = p_feedback_id;
+
+  if not found then
+    raise exception '建议不存在';
+  end if;
+
+  return true;
+end;
+$$;
+
+create or replace function public.admin_batch_delete_feedback(
+  p_feedback_ids bigint[]
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_admin public.admin_users;
+  v_count integer;
+begin
+  v_admin := public.app_require_admin();
+
+  if coalesce(array_length(p_feedback_ids, 1), 0) = 0 then
+    raise exception '请选择要删除的建议';
+  end if;
+
+  delete from public.feedback_messages
+  where id = any(p_feedback_ids);
+
+  get diagnostics v_count = row_count;
+  return v_count;
 end;
 $$;
 
@@ -374,14 +487,17 @@ grant execute on function public.app_track_event(text, text, text, text, text, j
 grant execute on function public.app_submit_feedback(text, text, text, text, text) to anon, authenticated;
 grant execute on function public.admin_get_me() to authenticated;
 grant execute on function public.admin_get_dashboard_summary() to authenticated;
-grant execute on function public.admin_list_feedback(text) to authenticated;
+grant execute on function public.admin_list_feedback(text, boolean) to authenticated;
 grant execute on function public.admin_update_feedback(bigint, text, text) to authenticated;
+grant execute on function public.admin_batch_mark_feedback_read(bigint[], boolean) to authenticated;
+grant execute on function public.admin_delete_feedback(bigint) to authenticated;
+grant execute on function public.admin_batch_delete_feedback(bigint[]) to authenticated;
 
 -- 把这里替换成你的管理员登录邮箱，执行一次即可授予后台权限。
 insert into public.admin_users (user_id, email, role)
 select id, email, 'admin'
 from auth.users
-where email in ('xpf@local.com', 'admin@local.com')
+where email in ('xpf@office.local', 'admin@office.local')
 on conflict (user_id) do update
 set email = excluded.email,
     role = excluded.role;

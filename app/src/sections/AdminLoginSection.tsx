@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Loader2, Lock, Mail, Shield } from 'lucide-react';
+import { ArrowLeft, Loader2, Shield } from 'lucide-react';
 
 interface AdminLoginSectionProps {
   onBack: () => void;
@@ -38,36 +38,25 @@ export function AdminLoginSection({
               <Shield className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-2xl font-bold text-white">管理员登录</h2>
-            <p className="text-slate-400 text-sm mt-2">
-              使用你的 Supabase 管理员账号登录查看统计和玩家建议
-            </p>
           </div>
 
           <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-slate-300 text-sm font-medium flex items-center gap-2">
-                <Mail className="w-4 h-4" />
-                邮箱
-              </label>
+            <div>
               <input
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="管理员邮箱"
+                placeholder="管理员账号"
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-slate-300 text-sm font-medium flex items-center gap-2">
-                <Lock className="w-4 h-4" />
-                密码
-              </label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="管理员密码"
+                placeholder="密码"
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
             </div>

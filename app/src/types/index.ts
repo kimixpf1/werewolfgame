@@ -246,7 +246,9 @@ export interface FeedbackMessage {
   contact?: string | null;
   content: string;
   status: FeedbackStatus;
+  is_read: boolean;
   admin_note?: string | null;
+  read_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -272,7 +274,11 @@ export interface AdminDashboardSummary {
   games_started: number;
   games_ended: number;
   total_feedback: number;
+  unread_feedback: number;
+  read_feedback: number;
   pending_feedback: number;
+  processing_feedback: number;
+  resolved_feedback: number;
   total_join_events: number;
   trend: AdminTrendPoint[];
 }

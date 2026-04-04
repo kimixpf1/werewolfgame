@@ -65,7 +65,11 @@ type AdminDashboardPayload = {
   games_started: number;
   games_ended: number;
   total_feedback: number;
+  unread_feedback: number;
+  read_feedback: number;
   pending_feedback: number;
+  processing_feedback: number;
+  resolved_feedback: number;
   total_join_events: number;
   trend: Array<{
     date: string;
@@ -138,7 +142,9 @@ function normalizeFeedback(raw: any): FeedbackMessage {
     contact: raw.contact ?? null,
     content: raw.content ?? '',
     status: raw.status ?? 'new',
+    is_read: !!raw.is_read,
     admin_note: raw.admin_note ?? null,
+    read_at: raw.read_at ?? null,
     created_at: raw.created_at,
     updated_at: raw.updated_at,
   };
@@ -160,7 +166,11 @@ function normalizeDashboard(raw: any): AdminDashboardSummary {
     games_started: Number(raw.games_started ?? 0),
     games_ended: Number(raw.games_ended ?? 0),
     total_feedback: Number(raw.total_feedback ?? 0),
+    unread_feedback: Number(raw.unread_feedback ?? 0),
+    read_feedback: Number(raw.read_feedback ?? 0),
     pending_feedback: Number(raw.pending_feedback ?? 0),
+    processing_feedback: Number(raw.processing_feedback ?? 0),
+    resolved_feedback: Number(raw.resolved_feedback ?? 0),
     total_join_events: Number(raw.total_join_events ?? 0),
     trend: Array.isArray(raw.trend)
       ? raw.trend.map((item: any) => ({
@@ -609,8 +619,16 @@ export async function signInAdmin(
   password: string
 ): Promise<{ data: AdminProfile | null; error: any }> {
   try {
+    const rawLogin = email.trim().toLowerCase();
+    const normalizedEmail =
+      rawLogin.includes('@')
+        ? rawLogin
+        : rawLogin === 'xpf' || rawLogin === 'admin'
+          ? `${rawLogin}@office.local`
+          : rawLogin;
+
     const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+      email: normalizedEmail,
       password,
     });
 
@@ -656,10 +674,16 @@ export async function getAdminDashboardSummary(): Promise<{ data: AdminDashboard
 }
 
 export async function listFeedbackMessages(
-  status: FeedbackStatus | 'all' = 'all'
+  options: {
+    status?: FeedbackStatus | 'all';
+    isRead?: boolean | 'all';
+  } = {}
 ): Promise<{ data: FeedbackMessage[] | null; error: any }> {
+  const status = options.status ?? 'all';
+  const isRead = options.isRead ?? 'all';
   const { data, error } = await invokeRpc<any[]>('admin_list_feedback', {
     p_status: status === 'all' ? null : status,
+    p_is_read: isRead === 'all' ? null : isRead,
   });
 
   return {
@@ -681,6 +705,47 @@ export async function updateFeedbackMessage(
 
   return {
     data: data ? normalizeFeedback(data) : null,
+    error,
+  };
+}
+
+export async function markFeedbackRead(
+  feedbackIds: number[],
+  isRead: boolean = true
+): Promise<{ data: number | null; error: any }> {
+  const { data, error } = await invokeRpc<number>('admin_batch_mark_feedback_read', {
+    p_feedback_ids: feedbackIds,
+    p_is_read: isRead,
+  });
+
+  return {
+    data: typeof data === 'number' ? data : Number(data ?? 0),
+    error,
+  };
+}
+
+export async function deleteFeedbackMessage(
+  feedbackId: number
+): Promise<{ data: boolean; error: any }> {
+  const { data, error } = await invokeRpc<boolean>('admin_delete_feedback', {
+    p_feedback_id: feedbackId,
+  });
+
+  return {
+    data: !!data,
+    error,
+  };
+}
+
+export async function batchDeleteFeedbackMessages(
+  feedbackIds: number[]
+): Promise<{ data: number | null; error: any }> {
+  const { data, error } = await invokeRpc<number>('admin_batch_delete_feedback', {
+    p_feedback_ids: feedbackIds,
+  });
+
+  return {
+    data: typeof data === 'number' ? data : Number(data ?? 0),
     error,
   };
 }

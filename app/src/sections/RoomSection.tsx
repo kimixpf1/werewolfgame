@@ -1135,6 +1135,7 @@ export function RoomSection({ room: initialRoom, localPlayer, onLeave }: RoomSec
             roles={room.roles.map(r => r.type as RoleType)}
             isHost={isRoomHost}
             hostToken={localPlayer.hostToken}
+            enableSheriff={room.enable_sheriff}
             currentPlayerId={localPlayer.playerId}
             currentPlayerRole={myRole || undefined}
             onExit={() => setShowAutoJudge(false)}

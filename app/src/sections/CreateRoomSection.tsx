@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Users, Sparkles, Settings2, Minus, Plus, Check, Shield, Crown, Info, Mic, ChevronDown, ChevronUp } from 'lucide-react';
 import { 
   ROLES, 
-  generateRecommendedBoard, 
+  getRecommendedBoardResult, 
   getBoardDescription, 
   shouldEnableSheriffDefault,
   ROLE_CATEGORIES 
@@ -66,9 +66,10 @@ export function CreateRoomSection({ onBack, onCreate }: CreateRoomSectionProps) 
   });
 
   // 根据人数自动生成推荐板子
-  const recommendedRoles = useMemo(() => {
-    return generateRecommendedBoard(playerCount, winMode);
+  const recommendedBoard = useMemo(() => {
+    return getRecommendedBoardResult(playerCount, winMode);
   }, [playerCount, winMode]);
+  const recommendedRoles = recommendedBoard.roles;
 
   // 当前使用的角色配置
   const currentRoles = isCustom ? customRoles : recommendedRoles;
@@ -192,13 +193,16 @@ export function CreateRoomSection({ onBack, onCreate }: CreateRoomSectionProps) 
             </button>
             <span className="text-2xl font-bold text-white flex-1 text-center">{playerCount}</span>
             <button
-              onClick={() => setPlayerCount(Math.min(18, playerCount + 1))}
+              onClick={() => setPlayerCount(Math.min(20, playerCount + 1))}
               className="w-10 h-10 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center transition-colors"
             >
               <Plus className="w-4 h-4" />
             </button>
             <span className="text-slate-400 text-sm">人</span>
           </div>
+          <p className="text-slate-500 text-xs">
+            自动推荐支持 6-20 人；如果当前胜负模式没有独立预设，会自动改用同人数通用板。
+          </p>
         </div>
 
         {/* 胜负模式 */}
@@ -321,10 +325,20 @@ export function CreateRoomSection({ onBack, onCreate }: CreateRoomSectionProps) 
               <div className="flex items-start gap-2">
                 <Info className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
                 <div className="text-sm">
-                  <span className="text-purple-300 font-medium">推荐板子：{getBoardDescription(recommendedRoles)}</span>
-                  <p className="text-slate-400 text-xs mt-1">
-                    根据{playerCount}人{winMode === 'side' ? '屠边' : '屠城'}模式自动配置
-                  </p>
+                  <span className="text-purple-300 font-medium">
+                    推荐板子：{recommendedBoard.boardName} · {getBoardDescription(recommendedRoles)}
+                  </span>
+                  {recommendedBoard.isExactMatch ? (
+                    <p className="text-slate-400 text-xs mt-1">
+                      已按 {playerCount} 人{winMode === 'side' ? '屠边' : '屠城'}模式自动配置
+                    </p>
+                  ) : (
+                    <p className="text-amber-300 text-xs mt-1 leading-5">
+                      当前 {playerCount} 人{winMode === 'side' ? '屠边' : '屠城'}暂无独立预设，已自动改用
+                      {playerCount} 人{recommendedBoard.sourceWinMode === 'side' ? '屠边' : '屠城'}通用板；
+                      如果你想微调角色，可以切到“自定义”。
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

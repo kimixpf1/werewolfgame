@@ -11,6 +11,7 @@ import { AdminLoginSection } from '@/sections/AdminLoginSection';
 import { AdminDashboardSection } from '@/sections/AdminDashboardSection';
 import { LegalSection } from '@/sections/LegalSection';
 import { 
+  batchDeleteFeedbackMessages,
   getAdminDashboardSummary,
   getAdminProfile,
   getOrCreateDeviceId,
@@ -18,6 +19,7 @@ import {
   joinRoom,
   generateRoomId, 
   generatePlayerId, 
+  markFeedbackRead,
   markPlayerDisconnected,
   restorePlayerSession,
   listFeedbackMessages,
@@ -25,6 +27,7 @@ import {
   signOutAdmin,
   submitFeedback,
   trackUsageEvent,
+  deleteFeedbackMessage,
   updateFeedbackMessage,
 } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -67,12 +70,16 @@ function App() {
   const [adminSummary, setAdminSummary] = useState<AdminDashboardSummary | null>(null);
   const [feedbackList, setFeedbackList] = useState<FeedbackMessage[]>([]);
   const [feedbackFilter, setFeedbackFilter] = useState<FeedbackStatus | 'all'>('all');
+  const [feedbackReadFilter, setFeedbackReadFilter] = useState<boolean | 'all'>('all');
 
-  const loadAdminDashboard = useCallback(async (status: FeedbackStatus | 'all') => {
+  const loadAdminDashboard = useCallback(async (
+    status: FeedbackStatus | 'all',
+    isRead: boolean | 'all'
+  ) => {
     setAdminLoading(true);
     const [{ data: summary, error: summaryError }, { data: feedbackData, error: feedbackError }] = await Promise.all([
       getAdminDashboardSummary(),
-      listFeedbackMessages(status),
+      listFeedbackMessages({ status, isRead }),
     ]);
 
     if (summaryError || feedbackError) {
@@ -139,9 +146,9 @@ function App() {
 
   useEffect(() => {
     if (currentView === 'admin' && adminProfile) {
-      void loadAdminDashboard(feedbackFilter);
+      void loadAdminDashboard(feedbackFilter, feedbackReadFilter);
     }
-  }, [adminProfile, currentView, feedbackFilter, loadAdminDashboard]);
+  }, [adminProfile, currentView, feedbackFilter, feedbackReadFilter, loadAdminDashboard]);
 
   // 创建房间
   const handleCreateRoom = async (
@@ -364,7 +371,40 @@ function App() {
     }
 
     toast.success('建议状态已更新');
-    await loadAdminDashboard(feedbackFilter);
+    await loadAdminDashboard(feedbackFilter, feedbackReadFilter);
+  };
+
+  const handleAdminMarkRead = async (feedbackIds: number[], isRead: boolean) => {
+    const { error, data } = await markFeedbackRead(feedbackIds, isRead);
+    if (error) {
+      toast.error(error.message || (isRead ? '标记已读失败' : '标记未读失败'));
+      return;
+    }
+
+    toast.success(`已更新 ${data ?? feedbackIds.length} 条建议`);
+    await loadAdminDashboard(feedbackFilter, feedbackReadFilter);
+  };
+
+  const handleAdminDeleteFeedback = async (feedbackId: number) => {
+    const { error } = await deleteFeedbackMessage(feedbackId);
+    if (error) {
+      toast.error(error.message || '删除建议失败');
+      return;
+    }
+
+    toast.success('建议已删除');
+    await loadAdminDashboard(feedbackFilter, feedbackReadFilter);
+  };
+
+  const handleAdminBatchDeleteFeedback = async (feedbackIds: number[]) => {
+    const { error, data } = await batchDeleteFeedbackMessages(feedbackIds);
+    if (error) {
+      toast.error(error.message || '批量删除失败');
+      return;
+    }
+
+    toast.success(`已删除 ${data ?? feedbackIds.length} 条建议`);
+    await loadAdminDashboard(feedbackFilter, feedbackReadFilter);
   };
 
   // 渲染当前视图
@@ -447,11 +487,16 @@ function App() {
             feedbackList={feedbackList}
             loading={adminLoading}
             feedbackFilter={feedbackFilter}
+            feedbackReadFilter={feedbackReadFilter}
             onBack={() => setCurrentView('home')}
             onSignOut={handleAdminSignOut}
-            onRefresh={() => loadAdminDashboard(feedbackFilter)}
+            onRefresh={() => loadAdminDashboard(feedbackFilter, feedbackReadFilter)}
             onChangeFilter={setFeedbackFilter}
+            onChangeReadFilter={setFeedbackReadFilter}
             onUpdateFeedback={handleAdminFeedbackUpdate}
+            onMarkRead={handleAdminMarkRead}
+            onDeleteFeedback={handleAdminDeleteFeedback}
+            onBatchDeleteFeedback={handleAdminBatchDeleteFeedback}
           />
         );
       default:

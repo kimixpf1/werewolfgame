@@ -1,5 +1,13 @@
 import type { RoleConfig, BoardConfig, RoleType, ModeratorTip, Player } from '@/types';
 
+export interface RecommendedBoardResult {
+  roles: RoleConfig[];
+  boardName: string;
+  description: string;
+  isExactMatch: boolean;
+  sourceWinMode: 'city' | 'side';
+}
+
 // 角色定义 - 包含纸牌样式颜色
 export const ROLES: Record<RoleType, { 
   name: string; 
@@ -688,22 +696,48 @@ export function generateRecommendedBoard(
   playerCount: number, 
   winMode: 'city' | 'side' = 'side'
 ): RoleConfig[] {
-  // 确保玩家数在合理范围内
+  return getRecommendedBoardResult(playerCount, winMode).roles;
+}
+
+export function getRecommendedBoardResult(
+  playerCount: number,
+  winMode: 'city' | 'side' = 'side'
+): RecommendedBoardResult {
   const count = Math.max(6, Math.min(20, playerCount));
-  
-  // 查找匹配的板子配置
-  const config = BOARD_CONFIGS.find(c => c.playerCount === count && c.winMode === winMode);
-  
-  if (config) {
-    return config.roles;
+
+  const exactConfig = BOARD_CONFIGS.find(c => c.playerCount === count && c.winMode === winMode);
+  if (exactConfig) {
+    return {
+      roles: exactConfig.roles,
+      boardName: exactConfig.name,
+      description: exactConfig.description,
+      isExactMatch: true,
+      sourceWinMode: winMode,
+    };
   }
-  
-  // 如果没有精确匹配，找最接近的人数配置
-  const closestConfig = BOARD_CONFIGS
-    .filter(c => c.winMode === winMode)
+
+  // 同人数优先，避免出现 13 人却退回成 8 人板子的错配。
+  const sameCountFallback = BOARD_CONFIGS.find(c => c.playerCount === count);
+  if (sameCountFallback) {
+    return {
+      roles: sameCountFallback.roles,
+      boardName: sameCountFallback.name,
+      description: sameCountFallback.description,
+      isExactMatch: false,
+      sourceWinMode: sameCountFallback.winMode,
+    };
+  }
+
+  const closestConfig = [...BOARD_CONFIGS]
     .sort((a, b) => Math.abs(a.playerCount - count) - Math.abs(b.playerCount - count))[0];
-  
-  return closestConfig?.roles || BOARD_CONFIGS[0].roles;
+
+  return {
+    roles: closestConfig?.roles || BOARD_CONFIGS[0].roles,
+    boardName: closestConfig?.name || BOARD_CONFIGS[0].name,
+    description: closestConfig?.description || BOARD_CONFIGS[0].description,
+    isExactMatch: false,
+    sourceWinMode: closestConfig?.winMode || BOARD_CONFIGS[0].winMode,
+  };
 }
 
 // 获取指定人数的所有可选板子
@@ -1122,13 +1156,13 @@ export const BOARD_CONFIGS: BoardConfig[] = [
     playerCount: 13,
     enableSheriff: true,
     winMode: 'side',
-    description: '预言家+女巫+猎人+守卫+4民+4狼',
+    description: '预言家+女巫+猎人+守卫+5民+4狼',
     roles: [
       { type: 'seer', name: '预言家', count: 1 },
       { type: 'witch', name: '女巫', count: 1 },
       { type: 'hunter', name: '猎人', count: 1 },
       { type: 'guard', name: '守卫', count: 1 },
-      { type: 'villager', name: '平民', count: 4 },
+      { type: 'villager', name: '平民', count: 5 },
       { type: 'werewolf', name: '狼人', count: 4 },
     ],
   },
@@ -1136,23 +1170,6 @@ export const BOARD_CONFIGS: BoardConfig[] = [
     id: '14-side',
     name: '14人预女猎守白',
     playerCount: 14,
-    enableSheriff: true,
-    winMode: 'side',
-    description: '预言家+女巫+猎人+守卫+白痴+4民+4狼',
-    roles: [
-      { type: 'seer', name: '预言家', count: 1 },
-      { type: 'witch', name: '女巫', count: 1 },
-      { type: 'hunter', name: '猎人', count: 1 },
-      { type: 'guard', name: '守卫', count: 1 },
-      { type: 'idiot', name: '白痴', count: 1 },
-      { type: 'villager', name: '平民', count: 4 },
-      { type: 'werewolf', name: '狼人', count: 4 },
-    ],
-  },
-  {
-    id: '15-side',
-    name: '15人预女猎守白',
-    playerCount: 15,
     enableSheriff: true,
     winMode: 'side',
     description: '预言家+女巫+猎人+守卫+白痴+5民+4狼',
@@ -1167,12 +1184,29 @@ export const BOARD_CONFIGS: BoardConfig[] = [
     ],
   },
   {
+    id: '15-side',
+    name: '15人预女猎守白',
+    playerCount: 15,
+    enableSheriff: true,
+    winMode: 'side',
+    description: '预言家+女巫+猎人+守卫+白痴+6民+4狼',
+    roles: [
+      { type: 'seer', name: '预言家', count: 1 },
+      { type: 'witch', name: '女巫', count: 1 },
+      { type: 'hunter', name: '猎人', count: 1 },
+      { type: 'guard', name: '守卫', count: 1 },
+      { type: 'idiot', name: '白痴', count: 1 },
+      { type: 'villager', name: '平民', count: 6 },
+      { type: 'werewolf', name: '狼人', count: 4 },
+    ],
+  },
+  {
     id: '16-side',
     name: '16人预女猎守白长',
     playerCount: 16,
     enableSheriff: true,
     winMode: 'side',
-    description: '预言家+女巫+猎人+守卫+白痴+长老+4民+4狼',
+    description: '预言家+女巫+猎人+守卫+白痴+长老+6民+4狼',
     roles: [
       { type: 'seer', name: '预言家', count: 1 },
       { type: 'witch', name: '女巫', count: 1 },
@@ -1180,7 +1214,7 @@ export const BOARD_CONFIGS: BoardConfig[] = [
       { type: 'guard', name: '守卫', count: 1 },
       { type: 'idiot', name: '白痴', count: 1 },
       { type: 'elder', name: '长老', count: 1 },
-      { type: 'villager', name: '平民', count: 4 },
+      { type: 'villager', name: '平民', count: 6 },
       { type: 'werewolf', name: '狼人', count: 4 },
     ],
   },
@@ -1190,7 +1224,7 @@ export const BOARD_CONFIGS: BoardConfig[] = [
     playerCount: 17,
     enableSheriff: true,
     winMode: 'side',
-    description: '预言家+女巫+猎人+守卫+白痴+长老+5民+4狼',
+    description: '预言家+女巫+猎人+守卫+白痴+长老+7民+4狼',
     roles: [
       { type: 'seer', name: '预言家', count: 1 },
       { type: 'witch', name: '女巫', count: 1 },
@@ -1198,7 +1232,7 @@ export const BOARD_CONFIGS: BoardConfig[] = [
       { type: 'guard', name: '守卫', count: 1 },
       { type: 'idiot', name: '白痴', count: 1 },
       { type: 'elder', name: '长老', count: 1 },
-      { type: 'villager', name: '平民', count: 5 },
+      { type: 'villager', name: '平民', count: 7 },
       { type: 'werewolf', name: '狼人', count: 4 },
     ],
   },
@@ -1208,7 +1242,7 @@ export const BOARD_CONFIGS: BoardConfig[] = [
     playerCount: 18,
     enableSheriff: true,
     winMode: 'side',
-    description: '预言家+女巫+猎人+守卫+白痴+长老+5民+5狼',
+    description: '预言家+女巫+猎人+守卫+白痴+长老+7民+5狼',
     roles: [
       { type: 'seer', name: '预言家', count: 1 },
       { type: 'witch', name: '女巫', count: 1 },
@@ -1216,7 +1250,7 @@ export const BOARD_CONFIGS: BoardConfig[] = [
       { type: 'guard', name: '守卫', count: 1 },
       { type: 'idiot', name: '白痴', count: 1 },
       { type: 'elder', name: '长老', count: 1 },
-      { type: 'villager', name: '平民', count: 5 },
+      { type: 'villager', name: '平民', count: 7 },
       { type: 'werewolf', name: '狼人', count: 5 },
     ],
   },
@@ -1226,7 +1260,7 @@ export const BOARD_CONFIGS: BoardConfig[] = [
     playerCount: 19,
     enableSheriff: true,
     winMode: 'side',
-    description: '预言家+女巫+猎人+守卫+白痴+长老+6民+5狼',
+    description: '预言家+女巫+猎人+守卫+白痴+长老+8民+5狼',
     roles: [
       { type: 'seer', name: '预言家', count: 1 },
       { type: 'witch', name: '女巫', count: 1 },
@@ -1234,7 +1268,7 @@ export const BOARD_CONFIGS: BoardConfig[] = [
       { type: 'guard', name: '守卫', count: 1 },
       { type: 'idiot', name: '白痴', count: 1 },
       { type: 'elder', name: '长老', count: 1 },
-      { type: 'villager', name: '平民', count: 6 },
+      { type: 'villager', name: '平民', count: 8 },
       { type: 'werewolf', name: '狼人', count: 5 },
     ],
   },
@@ -1244,7 +1278,7 @@ export const BOARD_CONFIGS: BoardConfig[] = [
     playerCount: 20,
     enableSheriff: true,
     winMode: 'side',
-    description: '预言家+女巫+猎人+守卫+白痴+长老+6民+6狼',
+    description: '预言家+女巫+猎人+守卫+白痴+长老+8民+6狼',
     roles: [
       { type: 'seer', name: '预言家', count: 1 },
       { type: 'witch', name: '女巫', count: 1 },
@@ -1252,7 +1286,7 @@ export const BOARD_CONFIGS: BoardConfig[] = [
       { type: 'guard', name: '守卫', count: 1 },
       { type: 'idiot', name: '白痴', count: 1 },
       { type: 'elder', name: '长老', count: 1 },
-      { type: 'villager', name: '平民', count: 6 },
+      { type: 'villager', name: '平民', count: 8 },
       { type: 'werewolf', name: '狼人', count: 6 },
     ],
   },
