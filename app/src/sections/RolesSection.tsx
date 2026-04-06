@@ -6,7 +6,6 @@ interface RolesSectionProps {
   onBack: () => void;
 }
 
-// 角色分类
 const ROLE_CATEGORIES_DISPLAY = {
   good_god: {
     title: '好人阵营 - 神职',
@@ -31,7 +30,7 @@ const ROLE_CATEGORIES_DISPLAY = {
   },
   neutral: {
     title: '第三方阵营',
-    roles: ['cupid', 'admirer'] as RoleType[],
+    roles: ['cupid', 'admirer', 'thief', 'bomber'] as RoleType[],
     color: 'text-purple-400',
     bgColor: 'bg-purple-500/10',
     borderColor: 'border-purple-500/30'
