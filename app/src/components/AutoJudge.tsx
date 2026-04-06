@@ -98,118 +98,201 @@ function normalizeNightActions(raw: unknown): NightAction[] {
     .filter((item) => item.phaseId);
 }
 
-// 语音合成 - 兼容微信浏览器
+const CHROME_SPEECH_TIMEOUT = 14000;
+const MAX_SEGMENT_CHARS = 50;
+
+function splitTextForChrome(text: string): string[] {
+  if (!text) return [];
+  if (text.length <= MAX_SEGMENT_CHARS) return [text];
+
+  const delimiters = /[，。！？；、：\n]/;
+  const segments: string[] = [];
+  let current = '';
+
+  const chars = Array.from(text);
+  for (const ch of chars) {
+    current += ch;
+    if (delimiters.test(ch) && current.length >= 8) {
+      segments.push(current.trim());
+      current = '';
+    } else if (current.length >= MAX_SEGMENT_CHARS) {
+      segments.push(current.trim());
+      current = '';
+    }
+  }
+
+  if (current.trim()) {
+    segments.push(current.trim());
+  }
+
+  return segments.filter(s => s.length > 0);
+}
+
 const useSpeech = () => {
   const [isReady, setIsReady] = useState(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const unlockedRef = useRef(false);
+  const speakingRef = useRef(false);
+  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (window.speechSynthesis) {
-        synthRef.current = window.speechSynthesis;
-        const loadVoices = () => {
-          const voices = synthRef.current?.getVoices();
-          if (voices && voices.length > 0) {
-            setIsReady(true);
-          }
-        };
-        loadVoices();
-        if (synthRef.current.onvoiceschanged !== undefined) {
-          synthRef.current.onvoiceschanged = loadVoices;
+    if (typeof window === 'undefined') return;
+
+    if (window.speechSynthesis) {
+      synthRef.current = window.speechSynthesis;
+      const loadVoices = () => {
+        const voices = synthRef.current?.getVoices();
+        if (voices && voices.length > 0) {
+          setIsReady(true);
         }
+      };
+      loadVoices();
+      if (synthRef.current.onvoiceschanged !== undefined) {
+        synthRef.current.onvoiceschanged = loadVoices;
       }
-
-      if ('AudioContext' in window || 'webkitAudioContext' in window) {
-        const ContextCtor = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
-        audioContextRef.current = new ContextCtor();
-      }
-
-      // 某些移动端环境即使 voices 延迟，也允许先尝试 speak。
-      setIsReady(true);
     }
 
-    const unlockAudio = () => {
-      if (unlockedRef.current) {
-        return;
-      }
+    if ('AudioContext' in window || 'webkitAudioContext' in window) {
+      const Ctor = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+      audioContextRef.current = new Ctor();
+    }
 
+    setIsReady(true);
+
+    const unlockAudio = () => {
+      if (unlockedRef.current) return;
       unlockedRef.current = true;
-      void audioContextRef.current?.resume();
+
+      if (audioContextRef.current?.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
 
       if (synthRef.current) {
         try {
-          const warmup = new SpeechSynthesisUtterance(' ');
-          warmup.volume = 0;
           synthRef.current.cancel();
+          const warmup = new SpeechSynthesisUtterance('');
+          warmup.volume = 0.01;
+          warmup.rate = 10;
           synthRef.current.speak(warmup);
-        } catch (error) {
-          console.warn('Speech warmup failed:', error);
-        }
+        } catch {}
       }
     };
 
-    window.addEventListener('touchstart', unlockAudio, { once: true });
+    window.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+    window.addEventListener('touchend', unlockAudio, { once: true, passive: true });
     window.addEventListener('click', unlockAudio, { once: true });
     document.addEventListener('WeixinJSBridgeReady', unlockAudio as EventListener, { once: true });
 
+    if (typeof (window as any).WeixinJSBridge !== 'undefined') {
+      unlockAudio();
+    }
+
     return () => {
       window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('touchend', unlockAudio);
       window.removeEventListener('click', unlockAudio);
       document.removeEventListener('WeixinJSBridgeReady', unlockAudio as EventListener);
-      audioContextRef.current?.close().catch(() => undefined);
+      synthRef.current?.cancel();
+      audioContextRef.current?.close().catch(() => {});
     };
   }, []);
 
   const unlock = useCallback(() => {
-    if (unlockedRef.current) {
-      return;
-    }
+    if (unlockedRef.current) return;
     unlockedRef.current = true;
-    void audioContextRef.current?.resume();
+    if (audioContextRef.current?.state === 'suspended') {
+      audioContextRef.current.resume().catch(() => {});
+    }
   }, []);
 
   const speak = useCallback((text: string, onEnd?: () => void) => {
     if (!synthRef.current) {
-      if (navigator.vibrate) {
-        navigator.vibrate([100, 50, 100]);
-      }
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
       onEnd?.();
       return;
     }
 
     synthRef.current.cancel();
+    currentUtteranceRef.current = null;
+    speakingRef.current = false;
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'zh-CN';
-    utterance.rate = 0.9;
-    utterance.pitch = 1;
-    utterance.volume = 1;
+    const segments = splitTextForChrome(text);
+    let segIdx = 0;
+    let settled = false;
 
-    const voices = synthRef.current.getVoices();
-    const zhVoice = voices.find(v => v.lang.includes('zh') || v.lang.includes('CN'));
-    if (zhVoice) {
-      utterance.voice = zhVoice;
-    }
-
-    utterance.onend = () => {
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      speakingRef.current = false;
+      currentUtteranceRef.current = null;
       onEnd?.();
     };
 
-    utterance.onerror = (error) => {
-      console.warn('Speech synthesis failed, fallback to vibration:', error);
-      if (navigator.vibrate) {
-        navigator.vibrate([100, 50, 100]);
+    const speakNext = () => {
+      if (segIdx >= segments.length || settled) {
+        finish();
+        return;
       }
-      onEnd?.();
+
+      const seg = segments[segIdx++];
+      const utterance = new SpeechSynthesisUtterance(seg);
+      utterance.lang = 'zh-CN';
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+
+      const voices = synthRef.current!.getVoices();
+      const zhVoice = voices.find(v => v.lang === 'zh-CN')
+        || voices.find(v => v.lang.startsWith('zh'))
+        || voices.find(v => v.lang.includes('CN'));
+      if (zhVoice) utterance.voice = zhVoice;
+
+      currentUtteranceRef.current = utterance;
+      speakingRef.current = true;
+
+      utterance.onend = () => {
+        speakingRef.current = false;
+        currentUtteranceRef.current = null;
+        speakNext();
+      };
+
+      utterance.onerror = (e: SpeechSynthesisErrorEvent) => {
+        if (e.error === 'canceled' || e.error === 'interrupted') return;
+        console.warn('Speech error:', e.error);
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        finish();
+      };
+
+      const timer = setTimeout(() => {
+        console.warn('Speech segment timed out, forcing next');
+        synthRef.current!.cancel();
+        speakingRef.current = false;
+        currentUtteranceRef.current = null;
+        setTimeout(speakNext, 100);
+      }, CHROME_SPEECH_TIMEOUT);
+
+      const origEnd = utterance.onend;
+      utterance.onend = () => {
+        clearTimeout(timer);
+        origEnd?.();
+      };
+      const origError = utterance.onerror;
+      utterance.onerror = (e) => {
+        clearTimeout(timer);
+        origError?.(e);
+      };
+
+      synthRef.current!.speak(utterance);
     };
 
-    synthRef.current.speak(utterance);
+    setTimeout(speakNext, 80);
   }, []);
 
   const stop = useCallback(() => {
     synthRef.current?.cancel();
+    speakingRef.current = false;
+    currentUtteranceRef.current = null;
   }, []);
 
   return { speak, stop, isReady, unlock };
