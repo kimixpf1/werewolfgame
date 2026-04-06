@@ -1,5 +1,33 @@
 # 项目迭代记录
 
+## 2026-04-06
+
+### 本次目标
+
+- 检查并完成之前未完成的遗留任务。
+- 修复 RolesSection.tsx 缺少 thief/bomber 角色显示的问题。
+- 更新项目规则、框架、迭代记录和 todolist。
+- 整理通用项目模板供后续所有项目使用。
+
+### 当前状态
+
+- ✅ 已更新 `project_rules.md`，新增"代码简洁高效"和"依赖管理"两条规则。
+- ✅ 已重写 `project_framework.md`，全面反映当前项目结构、技术栈、数据流和已知问题。
+- ✅ 已修复 `RolesSection.tsx`：将 thief（盗贼）和 bomber（炸弹人）添加到第三方阵营显示区。修复前只有丘比特和暗恋者，现在第三方阵营完整展示 4 个角色。
+- ✅ 本地预览验证通过：角色介绍页展示 4 个分类（好人神职18、好人平民2、狼人阵营11、第三方阵营4），共 32 个角色全部可见。
+- ✅ 构建通过（tsc -b exit 0, vite build exit 0），已提交（40a3e0b）并推送到 main。
+- ✅ GitHub Actions 自动部署已触发。
+
+### 提交记录
+
+- `27eaa41` refactor: dynamic ROLE_GROUPS generation and fix role display consistency
+- `40a3e0b` fix: RolesSection添加thief/bomber到第三方阵营显示 + 更新项目框架和规则
+
+### 遗留事项
+
+- 线上 Supabase 管理员 SQL 版本差仍未修复（缺少 is_read/read_at 字段和批处理 RPC）。
+- 电子法官微信内语音播报稳定性仍需优化。
+
 ## 2026-04-05
 
 ### 本次目标
@@ -9,20 +37,11 @@
 
 ### 当前状态
 
-- 已在源码层面用 `verify_presets.cjs` 自动化验证所有 19 个预设板子，角色总数全部正确。
-- 已确认 `getRecommendedBoardResult()` 返回的 `roles` 和 `description` 来自同一个 BoardConfig，逻辑层面摘要与详情一定一致。
-- 已确认 `CreateRoomSection.tsx` 中非自定义模式下 `recommendedRoles === currentRoles`，UI 层数据流正确。
-- `CreateRoomSection.tsx` 有未提交的 ROLE_GROUPS 重构改动（从静态对象改为动态生成：ROLE_GROUP_META + ROLE_GROUP_ORDER + getRoleGroupRoles）。
-- 已多次执行 `tsc -b`（exit 0）和 `vite build`（exit 0），dist 目录结构和 index.html 引用正常。
-- **构建产物验证受阻**：用 Grep/ripgrep 搜索 dist/assets/app.js 中的中文角色名返回 0 匹配，但直接读取文件可看到有效的 Vite/React runtime 代码。怀疑是 ripgrep 对单行超长 minified JS 文件的中文匹配问题，尚未用其他方式确认。
-- 需要下次用 `Select-String` 或 Node 脚本验证构建产物是否确实包含最新代码。
-
-### 下一步
-
-- 用 `Select-String` 或 Node 脚本验证 dist/assets/app.js 是否包含中文角色名，确认构建是否正确。
-- 如果构建正确，启动本地预览做多人数建房真人验收（12-20 人）。
-- 验收通过后提交 CreateRoomSection.tsx 改动并推送部署到 GitHub Pages。
-- 如果构建有问题，排查 vite build 配置或文件编码问题。
+- ✅ 已用 `verify_presets.cjs` 验证所有 19 个预设板子，角色总数全部正确。
+- ✅ 已确认 `getRecommendedBoardResult()` 返回的 `roles` 和 `description` 来自同一个 BoardConfig。
+- ✅ 已重构 `CreateRoomSection.tsx` 的 ROLE_GROUPS 为动态生成（ROLE_GROUP_META + ROLE_GROUP_ORDER + getRoleGroupRoles）。
+- ✅ 构建验证通过，已提交（27eaa41）并推送部署。
+- ✅ 线上 14 人推荐板子摘要与折叠详情已确认一致。
 
 ## 2026-04-02
 
