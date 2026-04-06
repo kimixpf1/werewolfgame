@@ -2,14 +2,41 @@
 
 ## 2026-04-06
 
-### 本次目标
+### 本次目标（第二轮）
+
+- 线上 Supabase 执行最新版 `admin_dashboard.sql`。
+- 电子法官微信内语音播报稳定性优化。
+
+### 当前状态
+
+- ✅ 用户已在 Supabase 后台执行 `admin_dashboard.sql`，补齐 `feedback_messages.is_read/read_at` 字段和删除/批量删除/批量已读 RPC。
+- ✅ 已完成电子法官语音播报稳定性优化，重点解决以下 7 个问题：
+  1. Chrome SpeechSynthesis 15 秒静默中断 → 新增 `splitTextForChrome()` 按中文标点分段（每段 ≤50 字），每段 14 秒超时保护。
+  2. 微信/移动端 AudioContext 解锁不完整 → 新增 touchend 监听、检查 AudioContext suspended 状态、检测 WeixinJSBridge 已就绪。
+  3. 语音预热不足 → 改为空字符串 + volume 0.01 + rate 10 的 warmup。
+  4. cancel→speak 冲突 → 首段播报前增加 80ms 延迟。
+  5. 错误处理粗糙 → 跳过 canceled/interrupted 错误，仅对真正异常 fallback。
+  6. 语音选择优化 → zh-CN > zh* > *CN* 优先级。
+  7. 无超时保护 → 每段独立 14 秒计时器，超时强制下一段。
+- ✅ 构建验证通过（tsc exit 0），已提交（ccb31e9）并推送到 main。
+- ✅ GitHub Actions 自动部署已触发。
+
+### 提交记录
+
+- `ccb31e9` fix: 优化电子法官语音播报稳定性（Chrome分段、微信AudioContext解锁、超时保护）
+
+### 遗留事项
+
+- 电子法官多端同步真人验收（用户执行）。
+
+### 本次目标（第一轮）
 
 - 检查并完成之前未完成的遗留任务。
 - 修复 RolesSection.tsx 缺少 thief/bomber 角色显示的问题。
 - 更新项目规则、框架、迭代记录和 todolist。
 - 整理通用项目模板供后续所有项目使用。
 
-### 当前状态
+### 当前状态（第一轮）
 
 - ✅ 已更新 `project_rules.md`，新增"代码简洁高效"和"依赖管理"两条规则。
 - ✅ 已重写 `project_framework.md`，全面反映当前项目结构、技术栈、数据流和已知问题。
@@ -23,10 +50,10 @@
 - `27eaa41` refactor: dynamic ROLE_GROUPS generation and fix role display consistency
 - `40a3e0b` fix: RolesSection添加thief/bomber到第三方阵营显示 + 更新项目框架和规则
 
-### 遗留事项
+### 遗留事项（第一轮）
 
-- 线上 Supabase 管理员 SQL 版本差仍未修复（缺少 is_read/read_at 字段和批处理 RPC）。
-- 电子法官微信内语音播报稳定性仍需优化。
+- 线上 Supabase 管理员 SQL 版本差仍未修复（缺少 is_read/read_at 字段和批处理 RPC）→ 第二轮已解决。
+- 电子法官微信内语音播报稳定性仍需优化 → 第二轮已解决。
 
 ## 2026-04-05
 

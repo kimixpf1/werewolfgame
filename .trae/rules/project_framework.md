@@ -76,7 +76,4 @@
 
 ## 已知问题与待办
 
-- RolesSection.tsx 硬编码 32 种角色，缺少 `thief`/`bomber` 的 'special' 分类展示（当前只有 god/villager/werewolf 三区）。
-- 线上 Supabase 管理员 SQL 仍存在版本差：旧环境缺少 `feedback_messages.is_read/read_at` 字段以及删除/批量删除/批量已读 RPC；前端已做旧接口兼容降级。
-- 电子法官微信内语音播报稳定性仍需继续优化。
-- 建房自动推荐已在源码层面修复（getRecommendedBoardResult 返回同一份 roles 和 description），线上部署需确认最新包已生效。
+- 电子法官微信内语音播报已完成 Chrome 分段、超时保护、AudioContext 解锁等优化（ccb31e9），多端真人验收待用户执行。
