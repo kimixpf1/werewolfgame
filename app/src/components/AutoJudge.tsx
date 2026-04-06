@@ -1075,7 +1075,9 @@ export function AutoJudge({
           </div>
           
           <button
-            onClick={startNight}
+            onClick={() => {
+              void startNight();
+            }}
             className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-xl font-bold text-lg flex items-center justify-center gap-2"
           >
             <Mic className="w-6 h-6" />

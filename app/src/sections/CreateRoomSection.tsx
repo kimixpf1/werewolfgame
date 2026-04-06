@@ -14,15 +14,21 @@ interface CreateRoomSectionProps {
   onCreate: (hostName: string, playerCount: number, roles: RoleConfig[], enableSheriff: boolean, winMode: WinMode, enableAutoJudge: boolean) => void;
 }
 
-// 按分类组织的角色
-const ROLE_GROUPS = {
+type RoleGroupKey = 'god' | 'villager' | 'werewolf' | 'special';
+
+const ROLE_GROUP_META: Record<RoleGroupKey, {
+  title: string;
+  description: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+}> = {
   god: {
     title: '神职阵营',
     description: '拥有特殊技能的好人',
     color: 'text-blue-400',
     bgColor: 'bg-blue-500/10',
     borderColor: 'border-blue-500/30',
-    roles: ['seer', 'witch', 'hunter', 'guard', 'knight', 'gravedigger', 'crow', 'magician', 'dreamer', 'demonhunter', 'muter', 'miracle', 'pure', 'prince', 'count', 'alchemist', 'elder'] as RoleType[]
   },
   villager: {
     title: '平民阵营',
@@ -30,7 +36,6 @@ const ROLE_GROUPS = {
     color: 'text-green-400',
     bgColor: 'bg-green-500/10',
     borderColor: 'border-green-500/30',
-    roles: ['villager', 'idiot', 'hooligan'] as RoleType[]
   },
   werewolf: {
     title: '狼人阵营',
@@ -38,7 +43,6 @@ const ROLE_GROUPS = {
     color: 'text-red-400',
     bgColor: 'bg-red-500/10',
     borderColor: 'border-red-500/30',
-    roles: ['werewolf', 'whitewolf', 'wolfgun', 'wolfbeauty', 'gargoyle', 'hiddenwolf', 'wolfwitch', 'nightmare'] as RoleType[]
   },
   special: {
     title: '特殊阵营',
@@ -46,9 +50,42 @@ const ROLE_GROUPS = {
     color: 'text-purple-400',
     bgColor: 'bg-purple-500/10',
     borderColor: 'border-purple-500/30',
-    roles: ['cupid', 'admirer', 'thief', 'bomber'] as RoleType[]
   }
 };
+
+const ROLE_GROUP_ORDER: Record<RoleGroupKey, RoleType[]> = {
+  god: [
+    'seer', 'witch', 'hunter', 'idiot', 'guard', 'elder', 'knight', 'gravedigger',
+    'crow', 'magician', 'dreamer', 'demonhunter', 'muter', 'miracle', 'pure',
+    'prince', 'count', 'alchemist'
+  ],
+  villager: ['villager', 'hooligan'],
+  werewolf: [
+    'werewolf', 'whitewolf', 'wolfgun', 'wolfbeauty', 'gargoyle', 'hiddenwolf',
+    'ghostknight', 'bloodmoon', 'nightmare', 'wolfwitch', 'redmoon'
+  ],
+  special: ['cupid', 'admirer', 'thief', 'bomber'],
+};
+
+function getRoleGroupRoles(groupKey: RoleGroupKey): RoleType[] {
+  const orderedRoles = ROLE_GROUP_ORDER[groupKey].filter(
+    (roleType) => ROLE_CATEGORIES[roleType] === groupKey
+  );
+  const remainingRoles = (Object.keys(ROLES) as RoleType[]).filter(
+    (roleType) =>
+      roleType !== 'moderator' &&
+      ROLE_CATEGORIES[roleType] === groupKey &&
+      !orderedRoles.includes(roleType)
+  );
+
+  return [...orderedRoles, ...remainingRoles];
+}
+
+const ROLE_GROUPS = (Object.keys(ROLE_GROUP_META) as RoleGroupKey[]).map((groupKey) => ({
+  key: groupKey,
+  ...ROLE_GROUP_META[groupKey],
+  roles: getRoleGroupRoles(groupKey),
+}));
 
 export function CreateRoomSection({ onBack, onCreate }: CreateRoomSectionProps) {
   const [hostName, setHostName] = useState('');
@@ -378,7 +415,8 @@ export function CreateRoomSection({ onBack, onCreate }: CreateRoomSectionProps) 
 
           {/* 折叠分类的角色列表 */}
           <div className="space-y-2">
-            {Object.entries(ROLE_GROUPS).map(([groupKey, group]) => {
+            {ROLE_GROUPS.map((group) => {
+              const groupKey = group.key;
               const isExpanded = expandedGroups[groupKey];
               const groupCount = group.roles.reduce((sum, roleType) => sum + getRoleCount(roleType), 0);
               
